@@ -1,0 +1,69 @@
+package sw1.p1.task.domain;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.CompoundIndexes;
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.Document;
+import sw1.p1.shared.TaskAudience;
+import sw1.p1.shared.TaskStatus;
+
+import java.time.Instant;
+import java.util.Map;
+
+@Document(collection = "tasks")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+@CompoundIndexes({
+    @CompoundIndex(name = "proc_node", def = "{'procedureId': 1, 'nodeId': 1}"),
+    @CompoundIndex(name = "area_status", def = "{'areaId': 1, 'status': 1}"),
+    @CompoundIndex(name = "assignee_status", def = "{'assignedOfficerId': 1, 'status': 1}")
+})
+public class Task {
+
+    @Id
+    private String id;
+
+    @Indexed
+    private String procedureId;
+
+    private String nodeId;
+
+    private String nodeLabel;
+
+    private String organizationId;
+
+    /** Área responsable (para bandeja de OFFICER) */
+    private String areaId;
+
+    private TaskAudience taskAudience;
+
+    private TaskStatus status;
+
+    /** OFFICER que tomó la tarea (null = sin asignar) */
+    private String assignedOfficerId;
+
+    /**
+     * Cliente al que pertenece la tarea (para CLIENT_TASK).
+     * Requerido cuando taskAudience == CLIENT.
+     */
+    private String assignedClientId;
+
+    /** Definición del formulario serializada desde el nodo */
+    private sw1.p1.policy.domain.FormDefinition form;
+
+    /** Respuesta del formulario al completar la tarea */
+    private Map<String, Object> formResponse;
+
+    private String notes;
+
+    private Instant createdAt;
+    private Instant updatedAt;
+    private Instant completedAt;
+}
