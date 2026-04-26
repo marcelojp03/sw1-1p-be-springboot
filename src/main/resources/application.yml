@@ -2,6 +2,9 @@ spring:
   application:
     name: workflow-core
 
+  config:
+    import: optional:file:.env[.properties]
+
   mongodb:
     uri: ${MONGODB_URI}
 
