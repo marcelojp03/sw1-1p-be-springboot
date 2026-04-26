@@ -43,15 +43,13 @@ public class UserService {
         user.setRoles(request.roles());
         user.setOrganizationId(request.organizationId());
         user.setAreaId(request.areaId());
-        user.setUpdatedAt(Instant.now());
 
         return toResponse(userRepository.save(user));
     }
 
-    public UserResponse setEnabled(String id, boolean enabled) {
+    public UserResponse setActive(String id, boolean active) {
         User user = getOrThrow(id);
-        user.setEnabled(enabled);
-        user.setUpdatedAt(Instant.now());
+        user.setActive(active);
         return toResponse(userRepository.save(user));
     }
 
@@ -72,7 +70,6 @@ public class UserService {
     private UserResponse toResponse(User user) {
         return new UserResponse(
                 user.getId(),
-                user.getUsername(),
                 user.getEmail(),
                 user.getFullName(),
                 user.getRoles(),
@@ -81,7 +78,7 @@ public class UserService {
                 user.getOrganizationId(),
                 user.getAreaId(),
                 user.getClientId(),
-                user.isEnabled()
+                user.isActive()
         );
     }
 }

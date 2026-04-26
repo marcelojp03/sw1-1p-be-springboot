@@ -4,7 +4,9 @@ import jakarta.validation.constraints.NotBlank;
 
 public record CreateNotificationRequest(
         @NotBlank String organizationId,
-        @NotBlank String recipientId,
+        String clientId,
+        String userId,
+        String procedureCode,
         @NotBlank String type,
         @NotBlank String title,
         @NotBlank String message,

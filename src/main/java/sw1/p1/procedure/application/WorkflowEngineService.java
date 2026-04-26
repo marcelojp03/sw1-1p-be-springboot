@@ -74,7 +74,7 @@ public class WorkflowEngineService {
         }
 
         WorkflowNode nextNode = findNode(nodes, nextTransition.getTo());
-        procedure.setCurrentNodeId(nextNode.getNodeId());
+        procedure.setCurrentNodeIds(List.of(nextNode.getNodeId()));
         procedure.setUpdatedAt(Instant.now());
 
         processNode(procedure, nextNode, actorId);
@@ -133,7 +133,7 @@ public class WorkflowEngineService {
 
                 List<WorkflowNode> nodes = procedure.getPolicySnapshot().getNodes();
                 WorkflowNode branchNode = findNode(nodes, branch.getTo());
-                procedure.setCurrentNodeId(branchNode.getNodeId());
+                procedure.setCurrentNodeIds(List.of(branchNode.getNodeId()));
                 procedureRepository.save(procedure);
                 processNode(procedure, branchNode, actorId);
             }
@@ -175,7 +175,7 @@ public class WorkflowEngineService {
         if (next == null) return;
 
         WorkflowNode nextNode = findNode(nodes, next.getTo());
-        procedure.setCurrentNodeId(nextNode.getNodeId());
+        procedure.setCurrentNodeIds(List.of(nextNode.getNodeId()));
         procedureRepository.save(procedure);
         processNode(procedure, nextNode, actorId);
     }
@@ -186,9 +186,9 @@ public class WorkflowEngineService {
         Task task = Task.builder()
                 .procedureId(procedure.getId())
                 .nodeId(node.getNodeId())
-                .nodeLabel(node.getLabel())
+                .label(node.getLabel())
                 .organizationId(procedure.getOrganizationId())
-                .areaId(node.getAreaId())
+                .assignedAreaId(node.getAreaId())
                 .taskAudience(TaskAudience.INTERNAL)
                 .status(TaskStatus.PENDING)
                 .form(node.getForm())
@@ -202,9 +202,9 @@ public class WorkflowEngineService {
         Task task = Task.builder()
                 .procedureId(procedure.getId())
                 .nodeId(node.getNodeId())
-                .nodeLabel(node.getLabel())
+                .label(node.getLabel())
                 .organizationId(procedure.getOrganizationId())
-                .areaId(node.getAreaId())
+                .assignedAreaId(node.getAreaId())
                 .taskAudience(TaskAudience.CLIENT)
                 .status(TaskStatus.PENDING)
                 .assignedClientId(procedure.getClientId())
@@ -303,7 +303,7 @@ public class WorkflowEngineService {
                 .nodeId(node.getNodeId())
                 .nodeLabel(node.getLabel())
                 .eventType(eventType)
-                .actorId(actorId)
+                .userId(actorId)
                 .formData(formData)
                 .notes(notes)
                 .occurredAt(Instant.now())
@@ -321,7 +321,7 @@ public class WorkflowEngineService {
                 .findFirst()
                 .orElseThrow(() -> new BusinessException("La política no tiene nodo START"));
 
-        procedure.setCurrentNodeId(startNode.getNodeId());
+        procedure.setCurrentNodeIds(List.of(startNode.getNodeId()));
         procedure.setStatus(ProcedureStatus.IN_PROGRESS);
         procedureRepository.save(procedure);
 

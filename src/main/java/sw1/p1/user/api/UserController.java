@@ -38,12 +38,12 @@ public class UserController {
         return ResponseEntity.ok(userService.update(id, request));
     }
 
-    /** PATCH /api/users/{id}/status?enabled=true|false */
+    /** PATCH /api/users/{id}/status?active=true|false */
     @PatchMapping("/{id}/status")
-    public ResponseEntity<UserResponse> setEnabled(
+    public ResponseEntity<UserResponse> setActive(
             @PathVariable String id,
-            @RequestParam boolean enabled) {
-        return ResponseEntity.ok(userService.setEnabled(id, enabled));
+            @RequestParam boolean active) {
+        return ResponseEntity.ok(userService.setActive(id, active));
     }
 
     @DeleteMapping("/{id}")

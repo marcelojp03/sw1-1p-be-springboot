@@ -42,7 +42,7 @@ public class ProcedureService {
         }
 
         String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
-        String startedBy = userRepository.findByUsername(currentUsername)
+        String startedBy = userRepository.findByEmail(currentUsername)
                 .map(u -> u.getId())
                 .orElse(null);
 
@@ -108,17 +108,18 @@ public class ProcedureService {
 
     private ProcedureResponse toResponse(Procedure p) {
         return new ProcedureResponse(
-                p.getId(), p.getOrganizationId(), p.getClientId(), p.getStartedBy(),
-                p.getCurrentNodeId(), p.getStatus(), p.getPolicySnapshot(),
-                p.getFormData(), p.getStartChannel(), p.getCreatedAt(), p.getUpdatedAt()
+                p.getId(), p.getCode(), p.getOrganizationId(), p.getPolicyId(), p.getPolicyVersion(),
+                p.getClientId(), p.getStartedBy(), p.getRequester(), p.getCurrentNodeIds(),
+                p.getStatus(), p.getPolicySnapshot(), p.getFormData(), p.getStartChannel(),
+                p.getStartedAt(), p.getCompletedAt(), p.getCreatedAt(), p.getUpdatedAt()
         );
     }
 
     private ProcedureSummaryResponse toSummary(Procedure p) {
         PolicySnapshot snap = p.getPolicySnapshot();
         return new ProcedureSummaryResponse(
-                p.getId(), p.getOrganizationId(), p.getClientId(),
-                p.getCurrentNodeId(), p.getStatus(),
+                p.getId(), p.getCode(), p.getOrganizationId(), p.getClientId(),
+                p.getCurrentNodeIds(), p.getStatus(),
                 snap != null ? snap.getPolicyName() : null,
                 snap != null ? snap.getVersion() : 0,
                 p.getCreatedAt(), p.getUpdatedAt()

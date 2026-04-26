@@ -27,7 +27,10 @@ public class OrganizationService {
 
         Organization org = Organization.builder()
                 .name(request.name())
-                .description(request.description())
+                .businessType(request.businessType())
+                .ruc(request.ruc())
+                .logoUrl(request.logoUrl())
+                .active(true)
                 .createdAt(Instant.now())
                 .updatedAt(Instant.now())
                 .build();
@@ -78,6 +81,7 @@ public class OrganizationService {
         List<AreaResponse> areas = org.getAreas().stream()
                 .map(a -> new AreaResponse(a.getId(), a.getName(), a.getDescription()))
                 .collect(Collectors.toList());
-        return new OrganizationResponse(org.getId(), org.getName(), org.getDescription(), areas);
+        return new OrganizationResponse(org.getId(), org.getName(), org.getBusinessType(),
+                org.getRuc(), org.getLogoUrl(), org.isActive(), areas);
     }
 }

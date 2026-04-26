@@ -25,7 +25,13 @@ public class Organization {
     @Indexed(unique = true)
     private String name;
 
-    private String description;
+    private String businessType;
+
+    private String ruc;
+
+    private String logoUrl;
+
+    private boolean active;
 
     /** Áreas embebidas */
     @Builder.Default

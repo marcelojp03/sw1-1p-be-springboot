@@ -8,7 +8,6 @@ import jakarta.validation.constraints.NotEmpty;
 import java.util.List;
 
 public record RegisterRequest(
-        @NotBlank String username,
         @NotBlank @Email String email,
         @NotBlank String password,
         @NotBlank String fullName,

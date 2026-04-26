@@ -5,6 +5,9 @@ import java.util.List;
 public record OrganizationResponse(
         String id,
         String name,
-        String description,
+        String businessType,
+        String ruc,
+        String logoUrl,
+        boolean active,
         List<AreaResponse> areas
 ) {}

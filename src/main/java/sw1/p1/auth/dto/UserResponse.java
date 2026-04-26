@@ -6,7 +6,6 @@ import java.util.List;
 
 public record UserResponse(
         String id,
-        String username,
         String email,
         String fullName,
         List<Role> roles,
@@ -15,5 +14,5 @@ public record UserResponse(
         String organizationId,
         String areaId,
         String clientId,
-        boolean enabled
+        boolean active
 ) {}

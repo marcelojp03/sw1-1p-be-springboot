@@ -4,5 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 
 public record CreateOrganizationRequest(
         @NotBlank String name,
-        String description
+        String businessType,
+        String ruc,
+        String logoUrl
 ) {}

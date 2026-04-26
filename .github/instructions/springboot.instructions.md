@@ -64,6 +64,20 @@ git push
 
 ---
 
+## Regla de modelos — OBLIGATORIA
+
+**Antes de crear o modificar cualquier clase `@Document`**, lee `.github/DATABASE.md` (un nivel arriba del repositorio: `../.github/DATABASE.md`).
+
+- Los campos del modelo Java **deben coincidir exactamente** con los campos definidos en `DATABASE.md`.
+- No inventes campos nuevos. Si crees que falta un campo, consúltalo antes de agregarlo.
+- Los nombres de los campos deben seguir `DATABASE.md`, no convenciones de Spring por defecto.
+- Ejemplos de inconsistencias a evitar:
+  - `DATABASE.md` define `email` como login → no usar `username` como campo de autenticación
+  - `DATABASE.md` define `active` → no usar `enabled`
+  - `DATABASE.md` define `passwordHash` → el campo en Java puede llamarse `password` (Spring lo encripta), pero el contrato expuesto en DTOs debe ser coherente
+
+---
+
 ## Reglas de arquitectura
 
 - Paquete base: `sw1.p1`

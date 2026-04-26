@@ -22,9 +22,6 @@ public class DataInitializer implements ApplicationRunner {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
-    @Value("${app.admin.username:admin}")
-    private String adminUsername;
-
     @Value("${app.admin.email:admin@example.com}")
     private String adminEmail;
 
@@ -42,17 +39,15 @@ public class DataInitializer implements ApplicationRunner {
         }
 
         User admin = User.builder()
-                .username(adminUsername)
                 .email(adminEmail)
                 .password(passwordEncoder.encode(adminPassword))
                 .fullName("Administrador")
                 .roles(List.of(Role.ADMIN))
-                .enabled(true)
+                .active(true)
                 .createdAt(Instant.now())
-                .updatedAt(Instant.now())
                 .build();
 
         userRepository.save(admin);
-        log.info("Usuario ADMIN inicial creado: {}", adminUsername);
+        log.info("Usuario ADMIN inicial creado: {}", adminEmail);
     }
 }

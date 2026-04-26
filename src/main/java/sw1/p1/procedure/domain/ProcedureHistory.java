@@ -40,7 +40,7 @@ public class ProcedureHistory {
     private String eventType;
 
     /** ID del actor humano que generó el evento (puede ser null para eventos automáticos) */
-    private String actorId;
+    private String userId;
 
     /** Datos del formulario enviados en este paso */
     private Map<String, Object> formData;

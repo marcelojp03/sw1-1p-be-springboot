@@ -5,7 +5,9 @@ import java.time.Instant;
 public record NotificationResponse(
         String id,
         String organizationId,
-        String recipientId,
+        String clientId,
+        String userId,
+        String procedureCode,
         String type,
         String title,
         String message,

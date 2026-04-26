@@ -30,14 +30,14 @@ public class TaskService {
 
     /** Bandeja: tareas PENDING del área */
     public Page<TaskResponse> findByArea(String areaId, Pageable pageable) {
-        return taskRepository.findByAreaIdAndStatus(areaId, TaskStatus.PENDING, pageable)
+        return taskRepository.findByAssignedAreaIdAndStatus(areaId, TaskStatus.PENDING, pageable)
                 .map(this::toResponse);
     }
 
     /** Tareas asignadas al OFFICER actual */
     public Page<TaskResponse> myTasks(Pageable pageable) {
         String officerId = currentUserId();
-        return taskRepository.findByAssignedOfficerIdAndStatus(officerId, TaskStatus.IN_PROGRESS, pageable)
+        return taskRepository.findByAssignedUserIdAndStatus(officerId, TaskStatus.IN_PROGRESS, pageable)
                 .map(this::toResponse);
     }
 
@@ -52,8 +52,9 @@ public class TaskService {
             throw new BusinessException("Solo se pueden tomar tareas en estado PENDING");
         }
         String officerId = currentUserId();
-        task.setAssignedOfficerId(officerId);
+        task.setAssignedUserId(officerId);
         task.setStatus(TaskStatus.IN_PROGRESS);
+        task.setStartedAt(Instant.now());
         task.setUpdatedAt(Instant.now());
         return toResponse(taskRepository.save(task));
     }
@@ -67,13 +68,14 @@ public class TaskService {
         }
 
         String officerId = currentUserId();
-        if (!officerId.equals(task.getAssignedOfficerId())) {
+        if (!officerId.equals(task.getAssignedUserId())) {
             throw new BusinessException("Solo el funcionario asignado puede completar esta tarea");
         }
 
         task.setFormResponse(request.formResponse());
         task.setNotes(request.notes());
         task.setStatus(TaskStatus.COMPLETED);
+        task.setCompletedBy(officerId);
         task.setCompletedAt(Instant.now());
         task.setUpdatedAt(Instant.now());
         taskRepository.save(task);
@@ -96,18 +98,18 @@ public class TaskService {
 
     private String currentUserId() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
+        return userRepository.findByEmail(username)
                 .map(u -> u.getId())
                 .orElse(null);
     }
 
     private TaskResponse toResponse(Task t) {
         return new TaskResponse(
-                t.getId(), t.getProcedureId(), t.getNodeId(), t.getNodeLabel(),
-                t.getOrganizationId(), t.getAreaId(), t.getTaskAudience(), t.getStatus(),
-                t.getAssignedOfficerId(), t.getAssignedClientId(),
-                t.getForm(), t.getFormResponse(), t.getNotes(),
-                t.getCreatedAt(), t.getCompletedAt()
+                t.getId(), t.getProcedureId(), t.getProcedureCode(), t.getPolicyId(),
+                t.getNodeId(), t.getLabel(), t.getOrganizationId(), t.getAssignedAreaId(),
+                t.getTaskAudience(), t.getStatus(), t.getAssignedUserId(), t.getAssignedClientId(),
+                t.getForm(), t.getFormResponse(), t.getNotes(), t.getCompletedBy(),
+                t.getCreatedAt(), t.getStartedAt(), t.getDueAt(), t.getCompletedAt()
         );
     }
 }

@@ -16,7 +16,7 @@ import java.time.Instant;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@CompoundIndex(name = "recipient_read", def = "{'recipientId': 1, 'read': 1}")
+@CompoundIndex(name = "client_read", def = "{'clientId': 1, 'read': 1}")
 public class Notification {
 
     @Id
@@ -25,13 +25,20 @@ public class Notification {
     @Indexed
     private String organizationId;
 
-    /** ID del usuario destinatario */
+    /** ID del cliente externo destinatario */
     @Indexed
-    private String recipientId;
+    private String clientId;
+
+    /** ID del usuario móvil vinculado al cliente */
+    @Indexed
+    private String userId;
+
+    /** Código del trámite relacionado */
+    private String procedureCode;
 
     /**
-     * Tipo de notificación: PROCEDURE_STARTED, TASK_ASSIGNED, TASK_COMPLETED,
-     * CLIENT_ACTION_REQUIRED, PROCEDURE_COMPLETED, SYSTEM, etc.
+     * Tipo de notificación: PROCEDURE_UPDATE, TASK_COMPLETED,
+     * PROCEDURE_APPROVED, PROCEDURE_REJECTED, PROCEDURE_OBSERVED, CUSTOM
      */
     private String type;
 

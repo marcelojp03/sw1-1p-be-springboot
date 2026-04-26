@@ -26,18 +26,17 @@ public class AuthService {
 
     public LoginResponse login(LoginRequest request) {
         authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.username(), request.password())
+                new UsernamePasswordAuthenticationToken(request.email(), request.password())
         );
 
-        User user = userRepository.findByUsername(request.username())
+        User user = userRepository.findByEmail(request.email())
                 .orElseThrow();
 
-        String token = jwtTokenProvider.generateToken(user.getUsername());
+        String token = jwtTokenProvider.generateToken(user.getEmail());
 
         return new LoginResponse(
                 token,
                 user.getId(),
-                user.getUsername(),
                 user.getEmail(),
                 user.getFullName(),
                 user.getRoles()
@@ -45,15 +44,11 @@ public class AuthService {
     }
 
     public UserResponse register(RegisterRequest request) {
-        if (userRepository.existsByUsername(request.username())) {
-            throw new ConflictException("El username ya está en uso");
-        }
         if (userRepository.existsByEmail(request.email())) {
             throw new ConflictException("El email ya está registrado");
         }
 
         User user = User.builder()
-                .username(request.username())
                 .email(request.email())
                 .password(passwordEncoder.encode(request.password()))
                 .fullName(request.fullName())
@@ -62,17 +57,16 @@ public class AuthService {
                 .positionName(request.positionName())
                 .organizationId(request.organizationId())
                 .areaId(request.areaId())
-                .enabled(true)
+                .active(true)
                 .createdAt(Instant.now())
-                .updatedAt(Instant.now())
                 .build();
 
         User saved = userRepository.save(user);
         return toResponse(saved);
     }
 
-    public UserResponse getMe(String username) {
-        User user = userRepository.findByUsername(username)
+    public UserResponse getMe(String email) {
+        User user = userRepository.findByEmail(email)
                 .orElseThrow();
         return toResponse(user);
     }
@@ -80,7 +74,6 @@ public class AuthService {
     private UserResponse toResponse(User user) {
         return new UserResponse(
                 user.getId(),
-                user.getUsername(),
                 user.getEmail(),
                 user.getFullName(),
                 user.getRoles(),
@@ -89,7 +82,7 @@ public class AuthService {
                 user.getOrganizationId(),
                 user.getAreaId(),
                 user.getClientId(),
-                user.isEnabled()
+                user.isActive()
         );
     }
 }

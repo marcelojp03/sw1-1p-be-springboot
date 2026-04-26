@@ -22,8 +22,8 @@ import java.util.Map;
 @Builder
 @CompoundIndexes({
     @CompoundIndex(name = "proc_node", def = "{'procedureId': 1, 'nodeId': 1}"),
-    @CompoundIndex(name = "area_status", def = "{'areaId': 1, 'status': 1}"),
-    @CompoundIndex(name = "assignee_status", def = "{'assignedOfficerId': 1, 'status': 1}")
+    @CompoundIndex(name = "area_status", def = "{'assignedAreaId': 1, 'status': 1}"),
+    @CompoundIndex(name = "assignee_status", def = "{'assignedUserId': 1, 'status': 1}")
 })
 public class Task {
 
@@ -33,21 +33,25 @@ public class Task {
     @Indexed
     private String procedureId;
 
+    private String procedureCode;
+
+    private String policyId;
+
     private String nodeId;
 
-    private String nodeLabel;
+    private String label;
 
     private String organizationId;
 
     /** Área responsable (para bandeja de OFFICER) */
-    private String areaId;
+    private String assignedAreaId;
 
     private TaskAudience taskAudience;
 
     private TaskStatus status;
 
-    /** OFFICER que tomó la tarea (null = sin asignar) */
-    private String assignedOfficerId;
+    /** Usuario (OFFICER o CLIENT) asignado a la tarea */
+    private String assignedUserId;
 
     /**
      * Cliente al que pertenece la tarea (para CLIENT_TASK).
@@ -63,7 +67,12 @@ public class Task {
 
     private String notes;
 
+    /** Quién completó la tarea */
+    private String completedBy;
+
     private Instant createdAt;
+    private Instant startedAt;
+    private Instant dueAt;
     private Instant updatedAt;
     private Instant completedAt;
 }

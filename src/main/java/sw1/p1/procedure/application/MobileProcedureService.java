@@ -42,14 +42,14 @@ public class MobileProcedureService {
     /** Obtiene el clientId del usuario autenticado */
     private String currentClientId() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
+        return userRepository.findByEmail(username)
                 .map(u -> u.getClientId())
                 .orElseThrow(() -> new BusinessException("El usuario no tiene un clientId asociado"));
     }
 
     private String currentUserId() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
+        return userRepository.findByEmail(username)
                 .map(u -> u.getId())
                 .orElse(null);
     }
@@ -174,17 +174,18 @@ public class MobileProcedureService {
 
     private ProcedureResponse toResponse(Procedure p) {
         return new ProcedureResponse(
-                p.getId(), p.getOrganizationId(), p.getClientId(), p.getStartedBy(),
-                p.getCurrentNodeId(), p.getStatus(), p.getPolicySnapshot(),
-                p.getFormData(), p.getStartChannel(), p.getCreatedAt(), p.getUpdatedAt()
+                p.getId(), p.getCode(), p.getOrganizationId(), p.getPolicyId(), p.getPolicyVersion(),
+                p.getClientId(), p.getStartedBy(), p.getRequester(), p.getCurrentNodeIds(),
+                p.getStatus(), p.getPolicySnapshot(), p.getFormData(), p.getStartChannel(),
+                p.getStartedAt(), p.getCompletedAt(), p.getCreatedAt(), p.getUpdatedAt()
         );
     }
 
     private ProcedureSummaryResponse toSummary(Procedure p) {
         PolicySnapshot snap = p.getPolicySnapshot();
         return new ProcedureSummaryResponse(
-                p.getId(), p.getOrganizationId(), p.getClientId(),
-                p.getCurrentNodeId(), p.getStatus(),
+                p.getId(), p.getCode(), p.getOrganizationId(), p.getClientId(),
+                p.getCurrentNodeIds(), p.getStatus(),
                 snap != null ? snap.getPolicyName() : null,
                 snap != null ? snap.getVersion() : 0,
                 p.getCreatedAt(), p.getUpdatedAt()
@@ -193,11 +194,11 @@ public class MobileProcedureService {
 
     private TaskResponse toTaskResponse(Task t) {
         return new TaskResponse(
-                t.getId(), t.getProcedureId(), t.getNodeId(), t.getNodeLabel(),
-                t.getOrganizationId(), t.getAreaId(), t.getTaskAudience(), t.getStatus(),
-                t.getAssignedOfficerId(), t.getAssignedClientId(),
-                t.getForm(), t.getFormResponse(), t.getNotes(),
-                t.getCreatedAt(), t.getCompletedAt()
+                t.getId(), t.getProcedureId(), t.getProcedureCode(), t.getPolicyId(),
+                t.getNodeId(), t.getLabel(), t.getOrganizationId(), t.getAssignedAreaId(),
+                t.getTaskAudience(), t.getStatus(), t.getAssignedUserId(), t.getAssignedClientId(),
+                t.getForm(), t.getFormResponse(), t.getNotes(), t.getCompletedBy(),
+                t.getCreatedAt(), t.getStartedAt(), t.getDueAt(), t.getCompletedAt()
         );
     }
 }

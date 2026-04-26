@@ -30,7 +30,9 @@ public class NotificationService {
     public NotificationResponse create(CreateNotificationRequest request) {
         Notification notification = Notification.builder()
                 .organizationId(request.organizationId())
-                .recipientId(request.recipientId())
+                .clientId(request.clientId())
+                .userId(request.userId())
+                .procedureCode(request.procedureCode())
                 .type(request.type())
                 .title(request.title())
                 .message(request.message())
@@ -42,10 +44,11 @@ public class NotificationService {
 
         notification = notificationRepository.save(notification);
 
-        // Push WebSocket al usuario específico (/user/{recipientId}/queue/notifications)
+        // Push WebSocket al usuario específico (/user/{userId}/queue/notifications)
         NotificationResponse response = toResponse(notification);
         messagingTemplate.convertAndSendToUser(
-                request.recipientId(), "/queue/notifications", response);
+                request.userId() != null ? request.userId() : request.clientId(),
+                "/queue/notifications", response);
 
         return response;
     }
@@ -55,17 +58,17 @@ public class NotificationService {
         String userId = currentUserId();
         if (Boolean.TRUE.equals(unreadOnly)) {
             return notificationRepository
-                    .findByRecipientIdAndReadOrderByCreatedAtDesc(userId, false, pageable)
+                    .findByUserIdAndReadOrderByCreatedAtDesc(userId, false, pageable)
                     .map(this::toResponse);
         }
         return notificationRepository
-                .findByRecipientIdOrderByCreatedAtDesc(userId, pageable)
+                .findByUserIdOrderByCreatedAtDesc(userId, pageable)
                 .map(this::toResponse);
     }
 
     /** Contar notificaciones no leídas del usuario autenticado */
     public long countUnread() {
-        return notificationRepository.countByRecipientIdAndRead(currentUserId(), false);
+        return notificationRepository.countByUserIdAndRead(currentUserId(), false);
     }
 
     /** Marcar una notificación como leída */
@@ -83,7 +86,7 @@ public class NotificationService {
     public void markAllAsRead() {
         String userId = currentUserId();
         notificationRepository
-                .findByRecipientIdAndReadOrderByCreatedAtDesc(userId, false, Pageable.unpaged())
+                .findByUserIdAndReadOrderByCreatedAtDesc(userId, false, Pageable.unpaged())
                 .forEach(n -> {
                     n.setRead(true);
                     n.setReadAt(Instant.now());
@@ -100,15 +103,15 @@ public class NotificationService {
 
     private String currentUserId() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
+        return userRepository.findByEmail(username)
                 .map(u -> u.getId())
                 .orElse(null);
     }
 
     private NotificationResponse toResponse(Notification n) {
         return new NotificationResponse(
-                n.getId(), n.getOrganizationId(), n.getRecipientId(),
-                n.getType(), n.getTitle(), n.getMessage(),
+                n.getId(), n.getOrganizationId(), n.getClientId(), n.getUserId(),
+                n.getProcedureCode(), n.getType(), n.getTitle(), n.getMessage(),
                 n.getProcedureId(), n.getTaskId(),
                 n.isRead(), n.getCreatedAt(), n.getReadAt()
         );
