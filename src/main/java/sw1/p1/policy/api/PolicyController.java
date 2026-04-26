@@ -13,7 +13,7 @@ import sw1.p1.policy.application.PolicyService;
 import sw1.p1.policy.dto.*;
 
 @RestController
-@RequestMapping("/api/policies")
+@RequestMapping({"/api/policies", "/api/workflow-policies"})
 @RequiredArgsConstructor
 @PreAuthorize("hasRole('ADMIN')")
 public class PolicyController {
