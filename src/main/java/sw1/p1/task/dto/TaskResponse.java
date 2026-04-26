@@ -5,6 +5,7 @@ import sw1.p1.shared.TaskAudience;
 import sw1.p1.shared.TaskStatus;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 public record TaskResponse(
@@ -24,6 +25,7 @@ public record TaskResponse(
         Map<String, Object> formResponse,
         String notes,
         String completedBy,
+        List<String> attachmentUrls,
         Instant createdAt,
         Instant startedAt,
         Instant dueAt,

@@ -109,6 +109,7 @@ public class TaskService {
                 t.getNodeId(), t.getLabel(), t.getOrganizationId(), t.getAssignedAreaId(),
                 t.getTaskAudience(), t.getStatus(), t.getAssignedUserId(), t.getAssignedClientId(),
                 t.getForm(), t.getFormResponse(), t.getNotes(), t.getCompletedBy(),
+                t.getAttachmentUrls(),
                 t.getCreatedAt(), t.getStartedAt(), t.getDueAt(), t.getCompletedAt()
         );
     }

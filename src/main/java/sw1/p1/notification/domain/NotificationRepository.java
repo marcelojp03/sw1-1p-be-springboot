@@ -12,4 +12,12 @@ public interface NotificationRepository extends MongoRepository<Notification, St
             String userId, boolean read, Pageable pageable);
 
     long countByUserIdAndRead(String userId, boolean read);
+
+    // Métodos para clientes (canal MOBILE)
+    Page<Notification> findByClientIdOrderByCreatedAtDesc(String clientId, Pageable pageable);
+
+    Page<Notification> findByClientIdAndReadOrderByCreatedAtDesc(
+            String clientId, boolean read, Pageable pageable);
+
+    long countByClientIdAndRead(String clientId, boolean read);
 }

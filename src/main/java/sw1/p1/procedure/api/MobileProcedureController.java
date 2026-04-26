@@ -7,11 +7,14 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import sw1.p1.notification.dto.NotificationResponse;
+import sw1.p1.policy.dto.AvailablePolicyResponse;
 import sw1.p1.procedure.application.MobileProcedureService;
 import sw1.p1.procedure.domain.ProcedureHistory;
 import sw1.p1.procedure.dto.ProcedureResponse;
 import sw1.p1.procedure.dto.ProcedureSummaryResponse;
 import sw1.p1.procedure.dto.StartProcedureRequest;
+import sw1.p1.task.dto.AddAttachmentsRequest;
 import sw1.p1.task.dto.CompleteTaskRequest;
 import sw1.p1.task.dto.TaskResponse;
 
@@ -24,6 +27,16 @@ import java.util.List;
 public class MobileProcedureController {
 
     private final MobileProcedureService mobileService;
+
+    // ── Políticas disponibles ──────────────────────────────────────────────────
+
+    /** Políticas PUBLISHED que permiten inicio por canal MOBILE */
+    @GetMapping("/workflow-policies/available")
+    public List<AvailablePolicyResponse> availablePolicies(@RequestParam String organizationId) {
+        return mobileService.availablePolicies(organizationId);
+    }
+
+    // ── Trámites ───────────────────────────────────────────────────────────────
 
     /** Trámites del cliente autenticado */
     @GetMapping("/procedures")
@@ -50,6 +63,8 @@ public class MobileProcedureController {
         return mobileService.start(request);
     }
 
+    // ── Tareas ─────────────────────────────────────────────────────────────────
+
     /** CLIENT_TASKs pendientes del cliente autenticado */
     @GetMapping("/tasks")
     public Page<TaskResponse> myTasks(Pageable pageable) {
@@ -61,5 +76,29 @@ public class MobileProcedureController {
     public TaskResponse completeTask(@PathVariable String id,
                                      @Valid @RequestBody CompleteTaskRequest request) {
         return mobileService.completeTask(id, request);
+    }
+
+    /** Adjuntar documentos a una CLIENT_TASK */
+    @PostMapping("/tasks/{id}/attachments")
+    @ResponseStatus(HttpStatus.CREATED)
+    public TaskResponse uploadAttachments(@PathVariable String id,
+                                          @Valid @RequestBody AddAttachmentsRequest request) {
+        return mobileService.uploadAttachments(id, request);
+    }
+
+    // ── Notificaciones ─────────────────────────────────────────────────────────
+
+    /** Notificaciones del cliente autenticado */
+    @GetMapping("/notifications")
+    public Page<NotificationResponse> myNotifications(
+            @RequestParam(required = false) Boolean unreadOnly,
+            Pageable pageable) {
+        return mobileService.myNotifications(unreadOnly, pageable);
+    }
+
+    /** Marcar una notificación como leída */
+    @PutMapping("/notifications/{id}/read")
+    public NotificationResponse markNotificationAsRead(@PathVariable String id) {
+        return mobileService.markNotificationAsRead(id);
     }
 }

@@ -30,7 +30,7 @@ public class ClientService {
         }
 
         String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
-        String createdBy = userRepository.findByUsername(currentUsername)
+        String createdBy = userRepository.findByEmail(currentUsername)
                 .map(u -> u.getId())
                 .orElse(null);
 

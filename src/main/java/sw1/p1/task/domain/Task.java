@@ -13,6 +13,7 @@ import sw1.p1.shared.TaskAudience;
 import sw1.p1.shared.TaskStatus;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 @Document(collection = "tasks")
@@ -69,6 +70,9 @@ public class Task {
 
     /** Quién completó la tarea */
     private String completedBy;
+
+    /** URLs de adjuntos/documentos subidos por el cliente */
+    private List<String> attachmentUrls;
 
     private Instant createdAt;
     private Instant startedAt;

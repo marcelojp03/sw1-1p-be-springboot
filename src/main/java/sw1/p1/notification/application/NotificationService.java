@@ -94,6 +94,39 @@ public class NotificationService {
                 });
     }
 
+    // ── Canal MOBILE (CLIENT) ─────────────────────────────────────────────────
+
+    /** Notificaciones del cliente autenticado (canal MOBILE) */
+    public Page<NotificationResponse> myClientNotifications(String clientId, Boolean unreadOnly, Pageable pageable) {
+        if (Boolean.TRUE.equals(unreadOnly)) {
+            return notificationRepository
+                    .findByClientIdAndReadOrderByCreatedAtDesc(clientId, false, pageable)
+                    .map(this::toResponse);
+        }
+        return notificationRepository
+                .findByClientIdOrderByCreatedAtDesc(clientId, pageable)
+                .map(this::toResponse);
+    }
+
+    /** Marcar como leída una notificación del cliente */
+    public NotificationResponse markAsReadForClient(String id, String clientId) {
+        Notification notification = getOrThrow(id);
+        if (!clientId.equals(notification.getClientId())) {
+            throw new sw1.p1.exception.BusinessException("No tiene permiso para modificar esta notificación");
+        }
+        if (!notification.isRead()) {
+            notification.setRead(true);
+            notification.setReadAt(Instant.now());
+            notification = notificationRepository.save(notification);
+        }
+        return toResponse(notification);
+    }
+
+    /** Contar notificaciones no leídas para un clientId */
+    public long countUnreadForClient(String clientId) {
+        return notificationRepository.countByClientIdAndRead(clientId, false);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private Notification getOrThrow(String id) {

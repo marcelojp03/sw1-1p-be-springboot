@@ -62,6 +62,14 @@ git push
 - Usa prefijos de commits convencionales: `feat`, `fix`, `refactor`, `docs`, `chore`.
 - El mensaje debe describir qué se implementó, no solo "cambios".
 
+### 4. Actualizar PLANNING.md
+
+Después del commit, marca como completadas (`- [x]`) las tareas que hayas terminado en `.github/PLANNING.md` (está en `../../.github/PLANNING.md` relativo a este repo).
+
+- Solo marca las tareas que efectivamente completaste en esta sesión.
+- No marques tareas que no tocaste.
+- No crees ni elimines secciones — solo cambia `[ ]` por `[x]`.
+
 ---
 
 ## Regla de modelos — OBLIGATORIA

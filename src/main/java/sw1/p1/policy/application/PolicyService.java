@@ -149,6 +149,7 @@ public class PolicyService {
 
     private void validateStructure(WorkflowPolicy policy) {
         List<WorkflowNode> nodes = policy.getNodes();
+        var transitions = policy.getTransitions();
 
         if (nodes == null || nodes.isEmpty()) {
             throw new BusinessException("La política debe tener al menos un nodo");
@@ -177,6 +178,36 @@ public class PolicyService {
                     throw new BusinessException(
                             "El nodo '" + n.getLabel() + "' requiere un areaId");
                 });
+
+        // Las transiciones deben apuntar a nodos existentes
+        if (transitions != null) {
+            java.util.Set<String> nodeIds = nodes.stream()
+                    .map(WorkflowNode::getNodeId)
+                    .collect(java.util.stream.Collectors.toSet());
+            transitions.forEach(t -> {
+                if (!nodeIds.contains(t.getFrom())) {
+                    throw new BusinessException(
+                            "La transición hace referencia a un nodo origen inexistente: " + t.getFrom());
+                }
+                if (!nodeIds.contains(t.getTo())) {
+                    throw new BusinessException(
+                            "La transición hace referencia a un nodo destino inexistente: " + t.getTo());
+                }
+            });
+
+            // Nodos huérfanos: todos los nodos no-START deben tener al menos una transición entrante
+            java.util.Set<String> reachable = transitions.stream()
+                    .map(sw1.p1.policy.domain.WorkflowTransition::getTo)
+                    .collect(java.util.stream.Collectors.toSet());
+            nodes.stream()
+                    .filter(n -> n.getType() != NodeType.START)
+                    .filter(n -> !reachable.contains(n.getNodeId()))
+                    .findFirst()
+                    .ifPresent(n -> {
+                        throw new BusinessException(
+                                "El nodo '" + n.getLabel() + "' es huérfano (ninguna transición llega a él)");
+                    });
+        }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -202,7 +233,7 @@ public class PolicyService {
 
     private String currentUserId() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
+        return userRepository.findByEmail(username)
                 .map(u -> u.getId())
                 .orElse(null);
     }

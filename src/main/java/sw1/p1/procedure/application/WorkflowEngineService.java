@@ -4,6 +4,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import sw1.p1.exception.BusinessException;
+import sw1.p1.notification.application.NotificationService;
+import sw1.p1.notification.dto.CreateNotificationRequest;
 import sw1.p1.policy.domain.WorkflowNode;
 import sw1.p1.policy.domain.WorkflowTransition;
 import sw1.p1.procedure.domain.Procedure;
@@ -35,6 +37,7 @@ public class WorkflowEngineService {
     private final ProcedureRepository procedureRepository;
     private final ProcedureHistoryRepository historyRepository;
     private final TaskRepository taskRepository;
+    private final NotificationService notificationService;
 
     /**
      * Avanza el trámite al siguiente nodo después de que una tarea fue completada.
@@ -105,8 +108,10 @@ public class WorkflowEngineService {
             case CLIENT_TASK -> {
                 procedure.setStatus(ProcedureStatus.WAITING_CLIENT);
                 recordHistory(procedure.getId(), node, "CLIENT_TASK_CREATED", actorId, null, null);
-                createClientTask(procedure, node);
+                Task clientTask = createClientTask(procedure, node);
                 procedureRepository.save(procedure);
+                // Notificar al cliente por WebSocket
+                notifyClient(procedure, clientTask);
             }
 
             case NOTIFICATION -> {
@@ -200,7 +205,7 @@ public class WorkflowEngineService {
         taskRepository.save(task);
     }
 
-    private void createClientTask(Procedure procedure, WorkflowNode node) {
+    private Task createClientTask(Procedure procedure, WorkflowNode node) {
         Task task = Task.builder()
                 .procedureId(procedure.getId())
                 .procedureCode(procedure.getCode())
@@ -216,7 +221,26 @@ public class WorkflowEngineService {
                 .createdAt(Instant.now())
                 .updatedAt(Instant.now())
                 .build();
-        taskRepository.save(task);
+        return taskRepository.save(task);
+    }
+
+    /** Envía notificación WebSocket al cliente cuando se le asigna una CLIENT_TASK */
+    private void notifyClient(Procedure procedure, Task task) {
+        try {
+            notificationService.create(new CreateNotificationRequest(
+                    procedure.getOrganizationId(),
+                    procedure.getClientId(),
+                    null,  // userId del cliente (no disponible aquí; el push va por clientId)
+                    procedure.getCode(),
+                    "CLIENT_TASK_CREATED",
+                    "Acción requerida en su trámite",
+                    "El trámite " + procedure.getCode() + " requiere su atención: " + task.getLabel(),
+                    procedure.getId(),
+                    task.getId()
+            ));
+        } catch (Exception e) {
+            log.warn("No se pudo enviar notificación para el trámite {}: {}", procedure.getCode(), e.getMessage());
+        }
     }
 
     // ── Resolución de transiciones ────────────────────────────────────────────

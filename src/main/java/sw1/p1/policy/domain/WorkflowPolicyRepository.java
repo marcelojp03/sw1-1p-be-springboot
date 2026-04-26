@@ -25,4 +25,8 @@ public interface WorkflowPolicyRepository extends MongoRepository<WorkflowPolicy
     /** Versión más alta de una policyKey en una organización */
     Optional<WorkflowPolicy> findTopByOrganizationIdAndPolicyKeyOrderByVersionDesc(
             String organizationId, String policyKey);
+
+    /** Políticas PUBLISHED que permiten un canal de inicio específico (ej. "MOBILE") */
+    List<WorkflowPolicy> findByOrganizationIdAndStatusAndAllowedStartChannelsContaining(
+            String organizationId, PolicyStatus status, String channel);
 }

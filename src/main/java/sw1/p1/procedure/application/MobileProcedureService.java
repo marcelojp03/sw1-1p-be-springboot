@@ -19,7 +19,11 @@ import sw1.p1.shared.PolicyStatus;
 import sw1.p1.shared.ProcedureStatus;
 import sw1.p1.shared.TaskAudience;
 import sw1.p1.shared.TaskStatus;
+import sw1.p1.notification.application.NotificationService;
+import sw1.p1.notification.dto.NotificationResponse;
+import sw1.p1.policy.dto.AvailablePolicyResponse;
 import sw1.p1.task.domain.Task;
+import sw1.p1.task.dto.AddAttachmentsRequest;
 import sw1.p1.task.domain.TaskRepository;
 import sw1.p1.task.dto.CompleteTaskRequest;
 import sw1.p1.task.dto.TaskResponse;
@@ -40,6 +44,7 @@ public class MobileProcedureService {
     private final ClientRepository clientRepository;
     private final TaskRepository taskRepository;
     private final WorkflowEngineService workflowEngine;
+    private final NotificationService notificationService;
 
     /** Obtiene el clientId del usuario autenticado */
     private String currentClientId() {
@@ -150,8 +155,19 @@ public class MobileProcedureService {
         return toResponse(procedure);
     }
 
-    public Page<TaskResponse> myTasks(Pageable pageable) {
-        String clientId = currentClientId();
+    /** Políticas disponibles para iniciar trámites desde canal MOBILE */
+    public List<AvailablePolicyResponse> availablePolicies(String organizationId) {
+        return policyRepository
+                .findByOrganizationIdAndStatusAndAllowedStartChannelsContaining(
+                        organizationId, PolicyStatus.PUBLISHED, "MOBILE")
+                .stream()
+                .map(p -> new AvailablePolicyResponse(
+                        p.getId(), p.getPolicyKey(), p.getName(),
+                        p.getDescription(), p.getVersion(), p.getAllowedStartChannels()))
+                .toList();
+    }
+
+    public Page<TaskResponse> myTasks(Pageable pageable) {        String clientId = currentClientId();
         return taskRepository.findByAssignedClientIdAndTaskAudience(clientId, TaskAudience.CLIENT, pageable)
                 .map(this::toTaskResponse);
     }
@@ -191,6 +207,53 @@ public class MobileProcedureService {
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
+    /** Agregar URLs de adjuntos a una CLIENT_TASK y registrar evento */
+    public TaskResponse uploadAttachments(String taskId, AddAttachmentsRequest request) {
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new NotFoundException("Tarea no encontrada: " + taskId));
+
+        if (task.getTaskAudience() != TaskAudience.CLIENT) {
+            throw new BusinessException("Esta tarea no es de tipo CLIENT");
+        }
+
+        String clientId = currentClientId();
+        if (!clientId.equals(task.getAssignedClientId())) {
+            throw new BusinessException("No tiene permiso para adjuntar documentos a esta tarea");
+        }
+
+        List<String> current = task.getAttachmentUrls() == null
+                ? new java.util.ArrayList<>() : new java.util.ArrayList<>(task.getAttachmentUrls());
+        current.addAll(request.urls());
+        task.setAttachmentUrls(current);
+        task.setUpdatedAt(Instant.now());
+        taskRepository.save(task);
+
+        // Registrar evento en historial
+        ProcedureHistory event = ProcedureHistory.builder()
+                .procedureId(task.getProcedureId())
+                .nodeId(task.getNodeId())
+                .eventType("CLIENT_DOCUMENT_UPLOADED")
+                .userId(currentUserId())
+                .notes("Adjuntos añadidos: " + request.urls().size())
+                .occurredAt(Instant.now())
+                .build();
+        historyRepository.save(event);
+
+        return toTaskResponse(task);
+    }
+
+    /** Notificaciones del cliente autenticado */
+    public Page<NotificationResponse> myNotifications(Boolean unreadOnly, Pageable pageable) {
+        String clientId = currentClientId();
+        return notificationService.myClientNotifications(clientId, unreadOnly, pageable);
+    }
+
+    /** Marcar notificación como leída */
+    public NotificationResponse markNotificationAsRead(String notificationId) {
+        String clientId = currentClientId();
+        return notificationService.markAsReadForClient(notificationId, clientId);
+    }
+
     private Procedure getOrThrow(String id) {
         return procedureRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Trámite no encontrado: " + id));
@@ -222,6 +285,7 @@ public class MobileProcedureService {
                 t.getNodeId(), t.getLabel(), t.getOrganizationId(), t.getAssignedAreaId(),
                 t.getTaskAudience(), t.getStatus(), t.getAssignedUserId(), t.getAssignedClientId(),
                 t.getForm(), t.getFormResponse(), t.getNotes(), t.getCompletedBy(),
+                t.getAttachmentUrls(),
                 t.getCreatedAt(), t.getStartedAt(), t.getDueAt(), t.getCompletedAt()
         );
     }
