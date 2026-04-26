@@ -6,6 +6,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import sw1.p1.auth.domain.UserRepository;
+import sw1.p1.client.domain.Client;
+import sw1.p1.client.domain.ClientRepository;
 import sw1.p1.exception.BusinessException;
 import sw1.p1.exception.NotFoundException;
 import sw1.p1.policy.domain.WorkflowPolicy;
@@ -18,6 +20,8 @@ import sw1.p1.shared.PolicyStatus;
 import sw1.p1.shared.ProcedureStatus;
 
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.util.List;
 
 @Service
@@ -28,6 +32,7 @@ public class ProcedureService {
     private final ProcedureHistoryRepository historyRepository;
     private final WorkflowPolicyRepository policyRepository;
     private final UserRepository userRepository;
+    private final ClientRepository clientRepository;
     private final WorkflowEngineService workflowEngine;
 
     public ProcedureResponse start(StartProcedureRequest request) {
@@ -46,6 +51,18 @@ public class ProcedureService {
                 .map(u -> u.getId())
                 .orElse(null);
 
+        Client client = clientRepository.findById(request.clientId()).orElse(null);
+        Procedure.RequesterInfo requester = null;
+        if (client != null) {
+            requester = Procedure.RequesterInfo.builder()
+                    .fullName(client.getFullName())
+                    .documentType(client.getDocumentType())
+                    .documentNumber(client.getDocumentNumber())
+                    .phone(client.getPhone())
+                    .email(client.getEmail())
+                    .build();
+        }
+
         PolicySnapshot snapshot = PolicySnapshot.builder()
                 .policyId(policy.getId())
                 .policyKey(policy.getPolicyKey())
@@ -57,15 +74,25 @@ public class ProcedureService {
                 .snapshotAt(Instant.now())
                 .build();
 
+        Instant now = Instant.now();
+        long sequential = procedureRepository.count() + 1;
+        int year = ZonedDateTime.now(ZoneOffset.UTC).getYear();
+        String code = String.format("TRM-%d-%04d", year, sequential);
+
         Procedure procedure = Procedure.builder()
+                .code(code)
                 .organizationId(request.organizationId())
+                .policyId(policy.getId())
+                .policyVersion(policy.getVersion())
                 .clientId(request.clientId())
                 .startedBy(startedBy)
+                .requester(requester)
                 .status(ProcedureStatus.CREATED)
                 .policySnapshot(snapshot)
                 .startChannel("WEB")
-                .createdAt(Instant.now())
-                .updatedAt(Instant.now())
+                .startedAt(now)
+                .createdAt(now)
+                .updatedAt(now)
                 .build();
 
         procedure = procedureRepository.save(procedure);

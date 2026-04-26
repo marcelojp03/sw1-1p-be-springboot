@@ -185,6 +185,8 @@ public class WorkflowEngineService {
     private void createInternalTask(Procedure procedure, WorkflowNode node) {
         Task task = Task.builder()
                 .procedureId(procedure.getId())
+                .procedureCode(procedure.getCode())
+                .policyId(procedure.getPolicyId())
                 .nodeId(node.getNodeId())
                 .label(node.getLabel())
                 .organizationId(procedure.getOrganizationId())
@@ -201,6 +203,8 @@ public class WorkflowEngineService {
     private void createClientTask(Procedure procedure, WorkflowNode node) {
         Task task = Task.builder()
                 .procedureId(procedure.getId())
+                .procedureCode(procedure.getCode())
+                .policyId(procedure.getPolicyId())
                 .nodeId(node.getNodeId())
                 .label(node.getLabel())
                 .organizationId(procedure.getOrganizationId())

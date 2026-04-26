@@ -25,6 +25,8 @@ import sw1.p1.task.dto.CompleteTaskRequest;
 import sw1.p1.task.dto.TaskResponse;
 
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.util.List;
 
 @Service
@@ -108,15 +110,37 @@ public class MobileProcedureService {
                 .snapshotAt(Instant.now())
                 .build();
 
+        var client = clientRepository.findById(clientId).orElse(null);
+        Procedure.RequesterInfo requester = null;
+        if (client != null) {
+            requester = Procedure.RequesterInfo.builder()
+                    .fullName(client.getFullName())
+                    .documentType(client.getDocumentType())
+                    .documentNumber(client.getDocumentNumber())
+                    .phone(client.getPhone())
+                    .email(client.getEmail())
+                    .build();
+        }
+
+        Instant now = Instant.now();
+        long sequential = procedureRepository.count() + 1;
+        int year = ZonedDateTime.now(ZoneOffset.UTC).getYear();
+        String code = String.format("TRM-%d-%04d", year, sequential);
+
         Procedure procedure = Procedure.builder()
+                .code(code)
                 .organizationId(request.organizationId())
+                .policyId(policy.getId())
+                .policyVersion(policy.getVersion())
                 .clientId(clientId)
                 .startedBy(userId)
+                .requester(requester)
                 .status(ProcedureStatus.CREATED)
                 .policySnapshot(snapshot)
                 .startChannel("MOBILE")
-                .createdAt(Instant.now())
-                .updatedAt(Instant.now())
+                .startedAt(now)
+                .createdAt(now)
+                .updatedAt(now)
                 .build();
 
         procedure = procedureRepository.save(procedure);
