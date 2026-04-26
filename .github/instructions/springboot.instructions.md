@@ -27,8 +27,7 @@ Ejecuta desde la raíz del repositorio:
 
 Cada vez que **crees, modifiques o elimines** un endpoint en cualquier `*Controller.java`:
 
-- Actualiza `.github/API.md` (en la carpeta raíz del workspace, **no** dentro de este repositorio).
-- Si el workspace solo tiene este repositorio abierto, crea/actualiza `API.md` en la raíz del repo.
+- Actualiza `.github/API.md` (en la carpeta raíz del workspace, **un nivel arriba** de este repositorio: `../.github/API.md`).
 - Usa el siguiente formato por endpoint:
 
 ```markdown
@@ -42,6 +41,13 @@ Cada vez que **crees, modifiques o elimines** un endpoint en cualquier `*Control
 
 - Organiza por secciones: `## Auth`, `## Organization`, `## Users`, `## Clients`, `## Policies`, `## Procedures`, `## Tasks`, `## Notifications`, `## Mobile`.
 - Si eliminas un endpoint, elimina su entrada del archivo.
+- **Cuando modifiques o elimines un endpoint**, agrega al final de su entrada en `API.md` una nota de cambio:
+
+```markdown
+> ⚠️ **Cambio:** [fecha] — [descripción del cambio]. Repos afectados: Angular / Flutter / FastAPI.
+```
+
+  Esto permite que los otros agentes detecten qué actualizar cuando lean `API.md`.
 
 ### 3. Hacer commit y push a Git
 
