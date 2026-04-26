@@ -33,6 +33,8 @@ import sw1.p1.shared.TaskStatus;
 import sw1.p1.task.domain.Task;
 import sw1.p1.task.domain.TaskRepository;
 
+import org.springframework.beans.factory.annotation.Value;
+
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -58,6 +60,9 @@ public class DemoDataInitializer implements ApplicationRunner {
     private final ProcedureHistoryRepository procedureHistoryRepository;
     private final TaskRepository taskRepository;
     private final PasswordEncoder passwordEncoder;
+
+    @Value("${app.demo.password:}")
+    private String demoPassword;
 
     @Override
     public void run(ApplicationArguments args) {
@@ -120,7 +125,7 @@ public class DemoDataInitializer implements ApplicationRunner {
         // ── 4. Usuarios demo ──────────────────────────────────────────────────────
         User officer = User.builder()
                 .email("officer@demo.com")
-                .password(passwordEncoder.encode("demo123"))
+                .password(passwordEncoder.encode(demoPassword))
                 .fullName("Juan Pérez")
                 .roles(List.of(Role.OFFICER))
                 .areaId(areaAtencionId)
@@ -133,7 +138,7 @@ public class DemoDataInitializer implements ApplicationRunner {
 
         User client = User.builder()
                 .email("cliente@demo.com")
-                .password(passwordEncoder.encode("demo123"))
+                .password(passwordEncoder.encode(demoPassword))
                 .fullName("María García")
                 .roles(List.of(Role.CLIENT))
                 .active(true)

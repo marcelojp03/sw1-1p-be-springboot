@@ -35,6 +35,8 @@ app:
     s3:
       bucket: ${STORAGE_BUCKET:workflow-files}
       region: ${AWS_DEFAULT_REGION:us-east-1}
+  demo:
+    password: ${DEMO_PASSWORD:}
 
 logging:
   level:
