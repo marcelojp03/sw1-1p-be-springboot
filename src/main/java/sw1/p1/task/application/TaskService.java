@@ -12,12 +12,17 @@ import sw1.p1.procedure.application.WorkflowEngineService;
 import sw1.p1.procedure.domain.Procedure;
 import sw1.p1.procedure.domain.ProcedureRepository;
 import sw1.p1.shared.TaskStatus;
+import sw1.p1.shared.storage.AttachmentRef;
+import sw1.p1.shared.storage.StorageService;
 import sw1.p1.task.domain.Task;
 import sw1.p1.task.domain.TaskRepository;
 import sw1.p1.task.dto.CompleteTaskRequest;
 import sw1.p1.task.dto.TaskResponse;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -27,6 +32,7 @@ public class TaskService {
     private final ProcedureRepository procedureRepository;
     private final UserRepository userRepository;
     private final WorkflowEngineService workflowEngine;
+    private final StorageService storageService;
 
     /** Bandeja: tareas PENDING del área */
     public Page<TaskResponse> findByArea(String areaId, Pageable pageable) {
@@ -109,8 +115,27 @@ public class TaskService {
                 t.getNodeId(), t.getLabel(), t.getOrganizationId(), t.getAssignedAreaId(),
                 t.getTaskAudience(), t.getStatus(), t.getAssignedUserId(), t.getAssignedClientId(),
                 t.getForm(), t.getFormResponse(), t.getNotes(), t.getCompletedBy(),
-                t.getAttachmentUrls(),
+                t.getAttachments(),
                 t.getCreatedAt(), t.getStartedAt(), t.getDueAt(), t.getCompletedAt()
         );
+    }
+
+    /** El OFFICER adjunta archivos a una tarea (los sube a S3) */
+    public TaskResponse addAttachments(String taskId, MultipartFile[] files) {
+        Task task = getOrThrow(taskId);
+
+        List<AttachmentRef> current = task.getAttachments() == null
+                ? new ArrayList<>() : new ArrayList<>(task.getAttachments());
+
+        for (MultipartFile file : files) {
+            String storageKey = String.format("procedures/%s/tasks/%s/%s",
+                    task.getProcedureId(), taskId, file.getOriginalFilename());
+            AttachmentRef ref = storageService.upload(file, storageKey);
+            current.add(ref);
+        }
+
+        task.setAttachments(current);
+        task.setUpdatedAt(Instant.now());
+        return toResponse(taskRepository.save(task));
     }
 }

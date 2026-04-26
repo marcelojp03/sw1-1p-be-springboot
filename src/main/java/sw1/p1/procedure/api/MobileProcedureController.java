@@ -7,6 +7,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import sw1.p1.notification.dto.NotificationResponse;
 import sw1.p1.policy.dto.AvailablePolicyResponse;
 import sw1.p1.procedure.application.MobileProcedureService;
@@ -14,7 +15,6 @@ import sw1.p1.procedure.domain.ProcedureHistory;
 import sw1.p1.procedure.dto.ProcedureResponse;
 import sw1.p1.procedure.dto.ProcedureSummaryResponse;
 import sw1.p1.procedure.dto.StartProcedureRequest;
-import sw1.p1.task.dto.AddAttachmentsRequest;
 import sw1.p1.task.dto.CompleteTaskRequest;
 import sw1.p1.task.dto.TaskResponse;
 
@@ -78,12 +78,13 @@ public class MobileProcedureController {
         return mobileService.completeTask(id, request);
     }
 
-    /** Adjuntar documentos a una CLIENT_TASK */
-    @PostMapping("/tasks/{id}/attachments")
+    /** Adjuntar documentos a una CLIENT_TASK (sube a S3) */
+    @PostMapping(value = "/tasks/{id}/attachments", consumes = "multipart/form-data")
     @ResponseStatus(HttpStatus.CREATED)
-    public TaskResponse uploadAttachments(@PathVariable String id,
-                                          @Valid @RequestBody AddAttachmentsRequest request) {
-        return mobileService.uploadAttachments(id, request);
+    public TaskResponse uploadAttachments(
+            @PathVariable String id,
+            @RequestParam("files") MultipartFile[] files) {
+        return mobileService.uploadAttachments(id, files);
     }
 
     // ── Notificaciones ─────────────────────────────────────────────────────────

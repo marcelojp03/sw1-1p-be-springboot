@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
+import sw1.p1.shared.storage.AttachmentRef;
 
 import java.time.Instant;
 import java.util.Map;
@@ -47,6 +48,9 @@ public class ProcedureHistory {
 
     /** Información adicional (ej: resultado de condición, motivo de rechazo) */
     private String notes;
+
+    /** Adjunto asociado al evento (ej: documento subido por el cliente) */
+    private AttachmentRef attachment;
 
     private Instant occurredAt;
 }

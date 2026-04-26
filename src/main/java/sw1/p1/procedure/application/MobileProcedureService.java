@@ -19,18 +19,21 @@ import sw1.p1.shared.PolicyStatus;
 import sw1.p1.shared.ProcedureStatus;
 import sw1.p1.shared.TaskAudience;
 import sw1.p1.shared.TaskStatus;
+import sw1.p1.shared.storage.AttachmentRef;
+import sw1.p1.shared.storage.StorageService;
 import sw1.p1.notification.application.NotificationService;
 import sw1.p1.notification.dto.NotificationResponse;
 import sw1.p1.policy.dto.AvailablePolicyResponse;
 import sw1.p1.task.domain.Task;
-import sw1.p1.task.dto.AddAttachmentsRequest;
 import sw1.p1.task.domain.TaskRepository;
 import sw1.p1.task.dto.CompleteTaskRequest;
 import sw1.p1.task.dto.TaskResponse;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -45,6 +48,7 @@ public class MobileProcedureService {
     private final TaskRepository taskRepository;
     private final WorkflowEngineService workflowEngine;
     private final NotificationService notificationService;
+    private final StorageService storageService;
 
     /** Obtiene el clientId del usuario autenticado */
     private String currentClientId() {
@@ -207,8 +211,8 @@ public class MobileProcedureService {
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    /** Agregar URLs de adjuntos a una CLIENT_TASK y registrar evento */
-    public TaskResponse uploadAttachments(String taskId, AddAttachmentsRequest request) {
+    /** Agregar archivos a una CLIENT_TASK subiéndolos a S3 y registrando un evento por archivo */
+    public TaskResponse uploadAttachments(String taskId, MultipartFile[] files) {
         Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new NotFoundException("Tarea no encontrada: " + taskId));
 
@@ -221,23 +225,31 @@ public class MobileProcedureService {
             throw new BusinessException("No tiene permiso para adjuntar documentos a esta tarea");
         }
 
-        List<String> current = task.getAttachmentUrls() == null
-                ? new java.util.ArrayList<>() : new java.util.ArrayList<>(task.getAttachmentUrls());
-        current.addAll(request.urls());
-        task.setAttachmentUrls(current);
+        List<AttachmentRef> current = task.getAttachments() == null
+                ? new ArrayList<>() : new ArrayList<>(task.getAttachments());
+
+        for (MultipartFile file : files) {
+            String storageKey = String.format("procedures/%s/client/%s/%s",
+                    task.getProcedureId(), taskId, file.getOriginalFilename());
+            AttachmentRef ref = storageService.upload(file, storageKey);
+            current.add(ref);
+
+            // Un evento por cada archivo subido
+            ProcedureHistory event = ProcedureHistory.builder()
+                    .procedureId(task.getProcedureId())
+                    .nodeId(task.getNodeId())
+                    .eventType("CLIENT_DOCUMENT_UPLOADED")
+                    .userId(currentUserId())
+                    .notes("Cliente subió: " + ref.getFileName())
+                    .attachment(ref)
+                    .occurredAt(Instant.now())
+                    .build();
+            historyRepository.save(event);
+        }
+
+        task.setAttachments(current);
         task.setUpdatedAt(Instant.now());
         taskRepository.save(task);
-
-        // Registrar evento en historial
-        ProcedureHistory event = ProcedureHistory.builder()
-                .procedureId(task.getProcedureId())
-                .nodeId(task.getNodeId())
-                .eventType("CLIENT_DOCUMENT_UPLOADED")
-                .userId(currentUserId())
-                .notes("Adjuntos añadidos: " + request.urls().size())
-                .occurredAt(Instant.now())
-                .build();
-        historyRepository.save(event);
 
         return toTaskResponse(task);
     }
@@ -285,7 +297,7 @@ public class MobileProcedureService {
                 t.getNodeId(), t.getLabel(), t.getOrganizationId(), t.getAssignedAreaId(),
                 t.getTaskAudience(), t.getStatus(), t.getAssignedUserId(), t.getAssignedClientId(),
                 t.getForm(), t.getFormResponse(), t.getNotes(), t.getCompletedBy(),
-                t.getAttachmentUrls(),
+                t.getAttachments(),
                 t.getCreatedAt(), t.getStartedAt(), t.getDueAt(), t.getCompletedAt()
         );
     }

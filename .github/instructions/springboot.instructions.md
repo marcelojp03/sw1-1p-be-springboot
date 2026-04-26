@@ -97,6 +97,19 @@ Después del commit, marca como completadas (`- [x]`) las tareas que hayas termi
 - FastAPI solo se llama desde `AIIntegrationService` vía `WebClient`, nunca directo desde controllers.
 - Endpoints móviles van en `/api/mobile/**` con acceso solo para rol `CLIENT`.
 
+### Almacenamiento de archivos (AWS S3)
+
+- El servicio de storage vive en `sw1.p1.shared.storage.StorageService`.
+- **No hay colección `archivos` en MongoDB.** `AttachmentRef` es una clase embebida (`@Data`, sin `@Document`) que se almacena dentro de `tasks.attachments`, `procedures.attachments`, `chat_messages.attachments`.
+- `StorageService` expone exactamente tres operaciones:
+  - `AttachmentRef upload(MultipartFile file, String storageKeyPrefix)` — sube a S3, retorna el `AttachmentRef` para embeber.
+  - `String generatePresignedUrl(String storageKey, Duration expiry)` — URL temporal de descarga.
+  - `void delete(String storageKey)` — elimina del bucket (usado en rollback).
+- Usa `software.amazon.awssdk:s3` con credenciales desde la AWS CLI configurada (`DefaultCredentialsProvider`).
+- Validaciones obligatorias: tamaño máximo 10 MB, extensiones permitidas: `jpg`, `jpeg`, `png`, `pdf`, `docx`, `xlsx`.
+- Convención de `storageKey` definida en `DATABASE.md` sección "Almacenamiento de Archivos".
+- El upload de archivos **no tiene controlador propio** — es invocado por `TaskService`, `MobileProcedureService`, etc.
+
 ---
 
 ## Referencias

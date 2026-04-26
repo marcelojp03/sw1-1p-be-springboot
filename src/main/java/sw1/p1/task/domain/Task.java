@@ -11,6 +11,7 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import sw1.p1.shared.TaskAudience;
 import sw1.p1.shared.TaskStatus;
+import sw1.p1.shared.storage.AttachmentRef;
 
 import java.time.Instant;
 import java.util.List;
@@ -71,8 +72,8 @@ public class Task {
     /** Quién completó la tarea */
     private String completedBy;
 
-    /** URLs de adjuntos/documentos subidos por el cliente */
-    private List<String> attachmentUrls;
+    /** Adjuntos/documentos subidos (referencias a S3) */
+    private List<AttachmentRef> attachments;
 
     private Instant createdAt;
     private Instant startedAt;

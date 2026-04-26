@@ -3,6 +3,7 @@ package sw1.p1.task.dto;
 import sw1.p1.policy.domain.FormDefinition;
 import sw1.p1.shared.TaskAudience;
 import sw1.p1.shared.TaskStatus;
+import sw1.p1.shared.storage.AttachmentRef;
 
 import java.time.Instant;
 import java.util.List;
@@ -25,7 +26,7 @@ public record TaskResponse(
         Map<String, Object> formResponse,
         String notes,
         String completedBy,
-        List<String> attachmentUrls,
+        List<AttachmentRef> attachments,
         Instant createdAt,
         Instant startedAt,
         Instant dueAt,

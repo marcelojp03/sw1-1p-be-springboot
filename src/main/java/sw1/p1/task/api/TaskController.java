@@ -4,9 +4,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import sw1.p1.task.application.TaskService;
 import sw1.p1.task.dto.CompleteTaskRequest;
 import sw1.p1.task.dto.TaskResponse;
@@ -51,5 +53,14 @@ public class TaskController {
             @PathVariable String id,
             @RequestBody CompleteTaskRequest request) {
         return ResponseEntity.ok(taskService.completeTask(id, request));
+    }
+
+    /** Adjuntar archivos a una tarea interna (sube a S3) */
+    @PostMapping(value = "/{id}/attachments", consumes = "multipart/form-data")
+    @ResponseStatus(HttpStatus.CREATED)
+    public TaskResponse addAttachments(
+            @PathVariable String id,
+            @RequestParam("files") MultipartFile[] files) {
+        return taskService.addAttachments(id, files);
     }
 }
