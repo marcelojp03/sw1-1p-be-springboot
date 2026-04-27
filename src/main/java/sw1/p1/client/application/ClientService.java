@@ -2,7 +2,10 @@ package sw1.p1.client.application;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import sw1.p1.auth.domain.Role;
+import sw1.p1.auth.domain.User;
 import sw1.p1.auth.domain.UserRepository;
 import sw1.p1.client.domain.Client;
 import sw1.p1.client.domain.ClientRepository;
@@ -22,6 +25,7 @@ public class ClientService {
 
     private final ClientRepository clientRepository;
     private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
 
     public ClientResponse create(CreateClientRequest request) {
         if (clientRepository.existsByDocumentNumberAndOrganizationId(
@@ -47,7 +51,29 @@ public class ClientService {
                 .updatedAt(Instant.now())
                 .build();
 
-        return toResponse(clientRepository.save(client));
+        Client saved = clientRepository.save(client);
+
+        // Si el cliente tiene email, crear automáticamente su cuenta de acceso (User con rol CLIENT).
+        // La contraseña por defecto es el número de documento.
+        if (request.email() != null && !request.email().isBlank()
+                && !userRepository.existsByEmail(request.email())) {
+            User user = User.builder()
+                    .email(request.email())
+                    .password(passwordEncoder.encode(request.documentNumber()))
+                    .fullName(request.fullName())
+                    .roles(List.of(Role.CLIENT))
+                    .phone(request.phone())
+                    .organizationId(request.organizationId())
+                    .clientId(saved.getId())
+                    .active(true)
+                    .createdAt(Instant.now())
+                    .build();
+            User savedUser = userRepository.save(user);
+            saved.setUserId(savedUser.getId());
+            saved = clientRepository.save(saved);
+        }
+
+        return toResponse(saved);
     }
 
     public List<ClientResponse> findByOrganization(String organizationId) {
@@ -76,6 +102,15 @@ public class ClientService {
         client.setAddress(request.address());
         client.setUpdatedAt(Instant.now());
         return toResponse(clientRepository.save(client));
+    }
+
+    public void delete(String id) {
+        Client client = getOrThrow(id);
+        // Si tiene cuenta de acceso vinculada, eliminarla también
+        if (client.getUserId() != null) {
+            userRepository.deleteById(client.getUserId());
+        }
+        clientRepository.deleteById(id);
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

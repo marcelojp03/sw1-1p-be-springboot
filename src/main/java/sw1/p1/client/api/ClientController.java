@@ -51,4 +51,10 @@ public class ClientController {
             @Valid @RequestBody UpdateClientRequest request) {
         return ResponseEntity.ok(clientService.update(id, request));
     }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable String id) {
+        clientService.delete(id);
+        return ResponseEntity.noContent().build();
+    }
 }
