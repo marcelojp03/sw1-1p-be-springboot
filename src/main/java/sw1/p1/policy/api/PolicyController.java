@@ -11,9 +11,10 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import sw1.p1.policy.application.PolicyService;
 import sw1.p1.policy.dto.*;
+import sw1.p1.shared.PolicyStatus;
 
 @RestController
-@RequestMapping({"/api/policies", "/api/workflow-policies"})
+@RequestMapping("/api/policies")
 @RequiredArgsConstructor
 @PreAuthorize("hasRole('ADMIN')")
 public class PolicyController {
@@ -28,13 +29,29 @@ public class PolicyController {
     @GetMapping
     public ResponseEntity<Page<PolicySummaryResponse>> findByOrganization(
             @RequestParam String organizationId,
+            @RequestParam(required = false) PolicyStatus status,
             @PageableDefault(size = 20, sort = "updatedAt") Pageable pageable) {
-        return ResponseEntity.ok(policyService.findByOrganization(organizationId, pageable));
+        return ResponseEntity.ok(policyService.findByOrganization(organizationId, status, pageable));
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<PolicyResponse> findById(@PathVariable String id) {
         return ResponseEntity.ok(policyService.findById(id));
+    }
+
+    /** Actualizar nombre y descripción (solo DRAFT) */
+    @PatchMapping("/{id}")
+    public ResponseEntity<PolicyResponse> updateMeta(
+            @PathVariable String id,
+            @Valid @RequestBody UpdatePolicyMetaRequest request) {
+        return ResponseEntity.ok(policyService.updateMeta(id, request));
+    }
+
+    /** Eliminar política en estado DRAFT */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable String id) {
+        policyService.delete(id);
+        return ResponseEntity.noContent().build();
     }
 
     /** Guardar diagrama + nodos + transiciones (diseñador visual) */

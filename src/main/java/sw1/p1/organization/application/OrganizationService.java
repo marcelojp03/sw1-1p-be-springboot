@@ -81,24 +81,6 @@ public class OrganizationService {
         return toResponse(organizationRepository.save(org));
     }
 
-    public OrganizationResponse update(String id, UpdateOrganizationRequest request) {
-        Organization org = getOrThrow(id);
-
-        if (request.name() != null && !request.name().equals(org.getName())) {
-            if (organizationRepository.existsByName(request.name())) {
-                throw new ConflictException("Ya existe una organización con ese nombre");
-            }
-            org.setName(request.name());
-        }
-        if (request.businessType() != null) org.setBusinessType(request.businessType());
-        if (request.ruc() != null) org.setRuc(request.ruc());
-        if (request.logoUrl() != null) org.setLogoUrl(request.logoUrl());
-        if (request.active() != null) org.setActive(request.active());
-        org.setUpdatedAt(Instant.now());
-
-        return toResponse(organizationRepository.save(org));
-    }
-
     public OrganizationResponse removeArea(String orgId, String areaId) {
         Organization org = getOrThrow(orgId);
         org.getAreas().removeIf(a -> a.getId().equals(areaId));

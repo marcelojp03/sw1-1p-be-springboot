@@ -12,6 +12,8 @@ public interface WorkflowPolicyRepository extends MongoRepository<WorkflowPolicy
 
     Page<WorkflowPolicy> findByOrganizationId(String organizationId, Pageable pageable);
 
+    Page<WorkflowPolicy> findByOrganizationIdAndStatus(String organizationId, PolicyStatus status, Pageable pageable);
+
     List<WorkflowPolicy> findByOrganizationIdAndStatus(String organizationId, PolicyStatus status);
 
     List<WorkflowPolicy> findByOrganizationIdAndPolicyKey(String organizationId, String policyKey);

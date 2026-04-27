@@ -13,8 +13,7 @@ import sw1.p1.policy.domain.WorkflowNode;
 import sw1.p1.policy.domain.WorkflowPolicy;
 import sw1.p1.policy.domain.WorkflowPolicyRepository;
 import sw1.p1.policy.dto.*;
-import sw1.p1.shared.NodeType;
-import sw1.p1.shared.PolicyStatus;
+import sw1.p1.shared.NodeType;import sw1.p1.shared.PolicyStatus;
 
 import java.time.Instant;
 import java.util.List;
@@ -54,7 +53,11 @@ public class PolicyService {
         return toResponse(policyRepository.save(policy));
     }
 
-    public Page<PolicySummaryResponse> findByOrganization(String organizationId, Pageable pageable) {
+    public Page<PolicySummaryResponse> findByOrganization(String organizationId, PolicyStatus status, Pageable pageable) {
+        if (status != null) {
+            return policyRepository.findByOrganizationIdAndStatus(organizationId, status, pageable)
+                    .map(this::toSummary);
+        }
         return policyRepository.findByOrganizationId(organizationId, pageable)
                 .map(this::toSummary);
     }
@@ -133,6 +136,23 @@ public class PolicyService {
                 .build();
 
         return toResponse(policyRepository.save(newVersion));
+    }
+
+    public PolicyResponse updateMeta(String id, UpdatePolicyMetaRequest request) {
+        WorkflowPolicy policy = getOrThrow(id);
+        requireDraft(policy);
+        policy.setName(request.name());
+        policy.setDescription(request.description());
+        policy.setUpdatedAt(Instant.now());
+        return toResponse(policyRepository.save(policy));
+    }
+
+    public void delete(String id) {
+        WorkflowPolicy policy = getOrThrow(id);
+        if (policy.getStatus() != PolicyStatus.DRAFT) {
+            throw new BusinessException("Solo se pueden eliminar políticas en estado DRAFT");
+        }
+        policyRepository.deleteById(id);
     }
 
     public void archive(String id) {
