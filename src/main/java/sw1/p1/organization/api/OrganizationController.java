@@ -33,6 +33,18 @@ public class OrganizationController {
     public ResponseEntity<OrganizationResponse> findById(@PathVariable String id) {
         return ResponseEntity.ok(organizationService.findById(id));
     }
+    @PutMapping("/{id}")
+    public ResponseEntity<OrganizationResponse> update(
+            @PathVariable String id,
+            @RequestBody UpdateOrganizationRequest request) {
+        return ResponseEntity.ok(organizationService.update(id, request));
+    }
+    @PutMapping("/{id}")
+    public ResponseEntity<OrganizationResponse> update(
+            @PathVariable String id,
+            @RequestBody UpdateOrganizationRequest request) {
+        return ResponseEntity.ok(organizationService.update(id, request));
+    }
 
     @PostMapping("/{id}/areas")
     public ResponseEntity<OrganizationResponse> addArea(
