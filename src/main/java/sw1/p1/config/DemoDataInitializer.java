@@ -39,7 +39,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
+import java.util.Optional;
 
 /**
  * Seed de datos demo para defensa del proyecto.
@@ -64,10 +64,42 @@ public class DemoDataInitializer implements ApplicationRunner {
     @Value("${app.demo.password:}")
     private String demoPassword;
 
+    @Value("${app.admin.email:admin@example.com}")
+    private String adminEmail;
+
     @Override
     public void run(ApplicationArguments args) {
-        if (organizationRepository.findByName("Banco Demo S.A.").isPresent()) {
-            log.info("Datos demo ya existen, omitiendo seed.");
+        Optional<Organization> existingOrg = organizationRepository.findByName("Banco Demo S.A.");
+        if (existingOrg.isPresent()) {
+            // Asegurar que el admin tiene organizationId (por email, más confiable que buscar por rol)
+            final String existingOrgId = existingOrg.get().getId();
+            userRepository.findByEmail(adminEmail).ifPresent(admin -> {
+                if (admin.getOrganizationId() == null || admin.getOrganizationId().isBlank()) {
+                    admin.setOrganizationId(existingOrgId);
+                    userRepository.save(admin);
+                    log.info("Admin '{}' vinculado a organización demo: {}", adminEmail, existingOrgId);
+                } else {
+                    log.info("Admin '{}' ya tiene organizationId: {}", adminEmail, admin.getOrganizationId());
+                }
+            });
+
+            // Sembrar políticas si la org existe pero no tiene ninguna política
+            List<Area> orgAreas = existingOrg.get().getAreas();
+            String atencionId = (orgAreas != null && !orgAreas.isEmpty()) ? orgAreas.get(0).getId() : "area-atencion-demo";
+            String revisionId = (orgAreas != null && orgAreas.size() > 1) ? orgAreas.get(1).getId() : atencionId;
+            String analisisId = (orgAreas != null && orgAreas.size() > 2) ? orgAreas.get(2).getId() : atencionId;
+            String creatorId = userRepository.findByEmail(adminEmail).map(User::getId).orElse("system");
+
+            if (workflowPolicyRepository.findByOrganizationIdAndStatus(existingOrgId, PolicyStatus.PUBLISHED).isEmpty()) {
+                log.info("Sembrando políticas demo para organización existente...");
+                seedPoliciesDemo(existingOrgId, atencionId, revisionId, analisisId, creatorId);
+            }
+
+            // Poblar DRAFTs y officers extra (idempotente)
+            seedDraftPolicies(existingOrgId, atencionId, revisionId, analisisId, creatorId);
+            seedExtraOfficers(existingOrgId, revisionId, analisisId);
+
+            log.info("Datos demo ya existen, omitiendo seed completo.");
             return;
         }
 
@@ -498,6 +530,361 @@ public class DemoDataInitializer implements ApplicationRunner {
                 .occurredAt(completedAt2).build());
 
         log.info("Procedimiento 2 creado: TRM-2026-0002");
+
+        // ── 9. Políticas DRAFT + officers extra ───────────────────────────────────
+        seedDraftPolicies(orgId, areaAtencionId, areaRevisionId, areaAnalisisId, officerId);
+        seedExtraOfficers(orgId, areaRevisionId, areaAnalisisId);
+
         log.info("Seed demo completado exitosamente.");
+    }
+
+    private void seedPoliciesDemo(String orgId, String atencionId, String revisionId, String analisisId, String creatorId) {
+        // ── Política 1: Solicitud de Crédito Personal ──────────────────────────
+        FormDefinition formRecepcion = FormDefinition.builder()
+                .formId("form-recepcion-credito")
+                .fields(List.of(
+                        FormField.builder().fieldId("solicitante_nombre").type("TEXT")
+                                .label("Nombre del solicitante").required(true).build(),
+                        FormField.builder().fieldId("monto_solicitado").type("NUMBER")
+                                .label("Monto solicitado (Bs)").required(true).min(1000.0).max(100000.0).build(),
+                        FormField.builder().fieldId("plazo_meses").type("SELECT")
+                                .label("Plazo (meses)").required(true)
+                                .options(List.of("12", "24", "36", "48", "60")).build()
+                )).build();
+
+        FormDefinition formAnalisis = FormDefinition.builder()
+                .formId("form-analisis-credito")
+                .fields(List.of(
+                        FormField.builder().fieldId("score_crediticio").type("NUMBER")
+                                .label("Score crediticio").required(true).min(0.0).max(1000.0).build(),
+                        FormField.builder().fieldId("decision").type("SELECT")
+                                .label("Decisión").required(true)
+                                .options(List.of("APROBADO", "RECHAZADO")).build()
+                )).build();
+
+        List<WorkflowNode> nodesCredito = List.of(
+                WorkflowNode.builder().nodeId("node-start").type(NodeType.START).label("Inicio").build(),
+                WorkflowNode.builder().nodeId("node-form1").type(NodeType.MANUAL_FORM)
+                        .label("Recepción de Solicitud").areaId(atencionId).slaHours(24).form(formRecepcion).build(),
+                WorkflowNode.builder().nodeId("node-cond1").type(NodeType.CONDITION).label("Evaluar monto").build(),
+                WorkflowNode.builder().nodeId("node-form2").type(NodeType.MANUAL_FORM)
+                        .label("Análisis Crediticio").areaId(analisisId).slaHours(48).form(formAnalisis).build(),
+                WorkflowNode.builder().nodeId("node-end-ok").type(NodeType.END).label("Crédito Aprobado").build(),
+                WorkflowNode.builder().nodeId("node-end-nok").type(NodeType.END).label("Crédito Rechazado").build()
+        );
+
+        List<WorkflowTransition> transitionsCredito = List.of(
+                WorkflowTransition.builder().transitionId("t1").from("node-start").to("node-form1").build(),
+                WorkflowTransition.builder().transitionId("t2").from("node-form1").to("node-cond1").build(),
+                WorkflowTransition.builder().transitionId("t3").from("node-cond1").to("node-form2")
+                        .condition("monto_solicitado <= 50000").label("Requiere análisis").build(),
+                WorkflowTransition.builder().transitionId("t4").from("node-cond1").to("node-end-ok")
+                        .condition("monto_solicitado > 50000").label("Monto alto, aprobación directa").build(),
+                WorkflowTransition.builder().transitionId("t5").from("node-form2").to("node-end-ok")
+                        .condition("decision == APROBADO").build(),
+                WorkflowTransition.builder().transitionId("t6").from("node-form2").to("node-end-nok")
+                        .condition("decision == RECHAZADO").build()
+        );
+
+        workflowPolicyRepository.save(WorkflowPolicy.builder()
+                .organizationId(orgId).policyKey("credito_personal")
+                .name("Solicitud de Crédito Personal")
+                .description("Proceso de solicitud y evaluación de crédito personal")
+                .version(1).status(PolicyStatus.PUBLISHED)
+                .allowedStartChannels(List.of("WEB", "MOBILE"))
+                .nodes(nodesCredito).transitions(transitionsCredito)
+                .createdBy(creatorId).publishedBy(creatorId)
+                .publishedAt(Instant.now().minus(7, ChronoUnit.DAYS))
+                .createdAt(Instant.now().minus(10, ChronoUnit.DAYS))
+                .updatedAt(Instant.now().minus(7, ChronoUnit.DAYS))
+                .build());
+        log.info("Política 'Solicitud de Crédito' sembrada.");
+
+        // ── Política 2: Reclamo de Servicio ──────────────────────────────────────
+        FormDefinition formReclamo = FormDefinition.builder()
+                .formId("form-recepcion-reclamo")
+                .fields(List.of(
+                        FormField.builder().fieldId("tipo_reclamo").type("SELECT")
+                                .label("Tipo de reclamo").required(true)
+                                .options(List.of("Cobro incorrecto", "Servicio deficiente", "Error en cuenta", "Otro")).build(),
+                        FormField.builder().fieldId("descripcion").type("TEXTAREA")
+                                .label("Descripción del problema").required(true).build()
+                )).build();
+
+        FormDefinition formResolucion = FormDefinition.builder()
+                .formId("form-resolucion-reclamo")
+                .fields(List.of(
+                        FormField.builder().fieldId("resultado").type("SELECT")
+                                .label("Resultado").required(true)
+                                .options(List.of("PROCEDENTE", "IMPROCEDENTE")).build(),
+                        FormField.builder().fieldId("observacion").type("TEXTAREA")
+                                .label("Observaciones").required(true).build()
+                )).build();
+
+        List<WorkflowNode> nodesReclamo = List.of(
+                WorkflowNode.builder().nodeId("node-start").type(NodeType.START).label("Inicio").build(),
+                WorkflowNode.builder().nodeId("node-recepcion").type(NodeType.MANUAL_FORM)
+                        .label("Recepción del Reclamo").areaId(atencionId).slaHours(8).form(formReclamo).build(),
+                WorkflowNode.builder().nodeId("node-cliente").type(NodeType.CLIENT_TASK)
+                        .label("Adjuntar evidencia").build(),
+                WorkflowNode.builder().nodeId("node-revision").type(NodeType.MANUAL_FORM)
+                        .label("Revisión y Resolución").areaId(revisionId).slaHours(72).form(formResolucion).build(),
+                WorkflowNode.builder().nodeId("node-end").type(NodeType.END).label("Reclamo Resuelto").build()
+        );
+
+        List<WorkflowTransition> transitionsReclamo = List.of(
+                WorkflowTransition.builder().transitionId("t1").from("node-start").to("node-recepcion").build(),
+                WorkflowTransition.builder().transitionId("t2").from("node-recepcion").to("node-cliente").build(),
+                WorkflowTransition.builder().transitionId("t3").from("node-cliente").to("node-revision").build(),
+                WorkflowTransition.builder().transitionId("t4").from("node-revision").to("node-end").build()
+        );
+
+        workflowPolicyRepository.save(WorkflowPolicy.builder()
+                .organizationId(orgId).policyKey("reclamo_servicio")
+                .name("Reclamo de Servicio")
+                .description("Proceso para gestión de reclamos de clientes")
+                .version(1).status(PolicyStatus.PUBLISHED)
+                .allowedStartChannels(List.of("WEB", "MOBILE"))
+                .nodes(nodesReclamo).transitions(transitionsReclamo)
+                .createdBy(creatorId).publishedBy(creatorId)
+                .publishedAt(Instant.now().minus(6, ChronoUnit.DAYS))
+                .createdAt(Instant.now().minus(9, ChronoUnit.DAYS))
+                .updatedAt(Instant.now().minus(6, ChronoUnit.DAYS))
+                .build());
+        log.info("Política 'Reclamo de Servicio' sembrada.");
+    }
+
+    // ── Políticas DRAFT: apertura_cuenta (WEB/officer) + credito_vivienda (MOBILE/client) ──
+    private void seedDraftPolicies(String orgId, String atencionId, String revisionId, String analisisId, String creatorId) {
+
+        // ── apertura_cuenta ────────────────────────────────────────────────────
+        workflowPolicyRepository
+                .findByOrganizationIdAndPolicyKeyAndVersion(orgId, "apertura_cuenta", 1)
+                .ifPresentOrElse(policy -> {
+                    if (policy.getNodes() == null || policy.getNodes().isEmpty()) {
+                        policy.setAllowedStartChannels(List.of("WEB"));
+                        policy.setNodes(buildAperturaNodes(atencionId, revisionId, analisisId));
+                        policy.setTransitions(buildAperturaTransitions());
+                        policy.setUpdatedAt(Instant.now());
+                        workflowPolicyRepository.save(policy);
+                        log.info("Política 'apertura_cuenta' poblada con nodos.");
+                    }
+                }, () -> {
+                    workflowPolicyRepository.save(WorkflowPolicy.builder()
+                            .organizationId(orgId).policyKey("apertura_cuenta")
+                            .name("Apertura de cuenta de ahorros")
+                            .description("Proceso de apertura de cuenta iniciado por un funcionario")
+                            .version(1).status(PolicyStatus.DRAFT)
+                            .allowedStartChannels(List.of("WEB"))
+                            .nodes(buildAperturaNodes(atencionId, revisionId, analisisId))
+                            .transitions(buildAperturaTransitions())
+                            .createdBy(creatorId)
+                            .createdAt(Instant.now()).updatedAt(Instant.now())
+                            .build());
+                    log.info("Política 'apertura_cuenta' creada como DRAFT.");
+                });
+
+        // ── credito_vivienda ───────────────────────────────────────────────────
+        workflowPolicyRepository
+                .findByOrganizationIdAndPolicyKeyAndVersion(orgId, "credito_vivienda", 1)
+                .ifPresentOrElse(policy -> {
+                    if (policy.getNodes() == null || policy.getNodes().isEmpty()) {
+                        policy.setAllowedStartChannels(List.of("MOBILE"));
+                        policy.setNodes(buildViviendaNodes(atencionId, revisionId, analisisId));
+                        policy.setTransitions(buildViviendaTransitions());
+                        policy.setUpdatedAt(Instant.now());
+                        workflowPolicyRepository.save(policy);
+                        log.info("Política 'credito_vivienda' poblada con nodos.");
+                    }
+                }, () -> {
+                    workflowPolicyRepository.save(WorkflowPolicy.builder()
+                            .organizationId(orgId).policyKey("credito_vivienda")
+                            .name("Crédito de Vivienda")
+                            .description("Proceso de crédito hipotecario iniciado por el cliente desde móvil")
+                            .version(1).status(PolicyStatus.DRAFT)
+                            .allowedStartChannels(List.of("MOBILE"))
+                            .nodes(buildViviendaNodes(atencionId, revisionId, analisisId))
+                            .transitions(buildViviendaTransitions())
+                            .createdBy(creatorId)
+                            .createdAt(Instant.now()).updatedAt(Instant.now())
+                            .build());
+                    log.info("Política 'credito_vivienda' creada como DRAFT.");
+                });
+    }
+
+    private List<WorkflowNode> buildAperturaNodes(String atencionId, String revisionId, String analisisId) {
+        FormDefinition formRecepcion = FormDefinition.builder()
+                .formId("form-apertura-recepcion")
+                .fields(List.of(
+                        FormField.builder().fieldId("nombre_titular").type("TEXT").label("Nombre del titular").required(true).build(),
+                        FormField.builder().fieldId("tipo_cuenta").type("SELECT").label("Tipo de cuenta").required(true)
+                                .options(List.of("AHORROS", "CORRIENTE")).build(),
+                        FormField.builder().fieldId("monto_apertura").type("NUMBER").label("Monto de apertura (Bs)").required(true)
+                                .min(50.0).max(100000.0).build(),
+                        FormField.builder().fieldId("dni").type("TEXT").label("Número de CI / DNI").required(true).build()
+                )).build();
+
+        FormDefinition formVerificacion = FormDefinition.builder()
+                .formId("form-apertura-verificacion")
+                .fields(List.of(
+                        FormField.builder().fieldId("documentos_verificados").type("SELECT").label("Documentos").required(true)
+                                .options(List.of("CONFORME", "NO_CONFORME")).build(),
+                        FormField.builder().fieldId("observaciones").type("TEXTAREA").label("Observaciones").required(false).build()
+                )).build();
+
+        FormDefinition formFirma = FormDefinition.builder()
+                .formId("form-apertura-firma")
+                .fields(List.of(
+                        FormField.builder().fieldId("acepta_terminos").type("SELECT").label("Acepta términos y condiciones").required(true)
+                                .options(List.of("SI")).build(),
+                        FormField.builder().fieldId("evidencia_firma").type("FILE").label("Contrato firmado (PDF/imagen)").required(true).build()
+                )).build();
+
+        FormDefinition formAprobacion = FormDefinition.builder()
+                .formId("form-apertura-aprobacion")
+                .fields(List.of(
+                        FormField.builder().fieldId("decision").type("SELECT").label("Decisión").required(true)
+                                .options(List.of("APROBADO", "RECHAZADO")).build(),
+                        FormField.builder().fieldId("numero_cuenta").type("TEXT").label("Número de cuenta asignado").required(false).build(),
+                        FormField.builder().fieldId("comentario").type("TEXTAREA").label("Comentario").required(false).build()
+                )).build();
+
+        return List.of(
+                WorkflowNode.builder().nodeId("ap-start").type(NodeType.START).label("Inicio").build(),
+                WorkflowNode.builder().nodeId("ap-recepcion").type(NodeType.MANUAL_FORM)
+                        .label("Recepción de Solicitud").areaId(atencionId).slaHours(24).form(formRecepcion).build(),
+                WorkflowNode.builder().nodeId("ap-verificacion").type(NodeType.MANUAL_ACTION)
+                        .label("Verificación de Identidad").areaId(revisionId).slaHours(8).form(formVerificacion).build(),
+                WorkflowNode.builder().nodeId("ap-firma").type(NodeType.CLIENT_TASK)
+                        .label("Firma de Contrato Digital").areaId(atencionId).slaHours(48).form(formFirma).build(),
+                WorkflowNode.builder().nodeId("ap-aprobacion").type(NodeType.MANUAL_ACTION)
+                        .label("Aprobación Final").areaId(analisisId).slaHours(24).form(formAprobacion).build(),
+                WorkflowNode.builder().nodeId("ap-end-ok").type(NodeType.END).label("Cuenta Aperturada").build(),
+                WorkflowNode.builder().nodeId("ap-end-nok").type(NodeType.END).label("Solicitud Rechazada").build()
+        );
+    }
+
+    private List<WorkflowTransition> buildAperturaTransitions() {
+        return List.of(
+                WorkflowTransition.builder().transitionId("ap-t1").from("ap-start").to("ap-recepcion").build(),
+                WorkflowTransition.builder().transitionId("ap-t2").from("ap-recepcion").to("ap-verificacion").build(),
+                WorkflowTransition.builder().transitionId("ap-t3").from("ap-verificacion").to("ap-firma")
+                        .condition("documentos_verificados == CONFORME").label("Documentos conformes").build(),
+                WorkflowTransition.builder().transitionId("ap-t4").from("ap-verificacion").to("ap-end-nok")
+                        .condition("documentos_verificados == NO_CONFORME").label("Documentos no conformes").build(),
+                WorkflowTransition.builder().transitionId("ap-t5").from("ap-firma").to("ap-aprobacion").build(),
+                WorkflowTransition.builder().transitionId("ap-t6").from("ap-aprobacion").to("ap-end-ok")
+                        .condition("decision == APROBADO").build(),
+                WorkflowTransition.builder().transitionId("ap-t7").from("ap-aprobacion").to("ap-end-nok")
+                        .condition("decision == RECHAZADO").build()
+        );
+    }
+
+    private List<WorkflowNode> buildViviendaNodes(String atencionId, String revisionId, String analisisId) {
+        FormDefinition formVerificacion = FormDefinition.builder()
+                .formId("form-vivienda-verificacion")
+                .fields(List.of(
+                        FormField.builder().fieldId("cliente_identificado").type("SELECT").label("Estado del cliente").required(true)
+                                .options(List.of("CONFORME", "PENDIENTE_DOCS")).build(),
+                        FormField.builder().fieldId("observacion").type("TEXTAREA").label("Observación inicial").required(false).build()
+                )).build();
+
+        FormDefinition formDocs = FormDefinition.builder()
+                .formId("form-vivienda-docs")
+                .fields(List.of(
+                        FormField.builder().fieldId("comprobante_ingresos").type("FILE").label("Comprobante de ingresos").required(true).build(),
+                        FormField.builder().fieldId("foto_dni").type("FILE").label("Foto del CI / DNI").required(true).build(),
+                        FormField.builder().fieldId("carta_laboral").type("FILE").label("Carta laboral (opcional)").required(false).build()
+                )).build();
+
+        FormDefinition formEvaluacion = FormDefinition.builder()
+                .formId("form-vivienda-evaluacion")
+                .fields(List.of(
+                        FormField.builder().fieldId("score").type("NUMBER").label("Score crediticio").required(true)
+                                .min(0.0).max(1000.0).build(),
+                        FormField.builder().fieldId("capacidad_pago").type("NUMBER").label("Capacidad de pago mensual (Bs)").required(true).build(),
+                        FormField.builder().fieldId("riesgo").type("SELECT").label("Nivel de riesgo").required(true)
+                                .options(List.of("BAJO", "MEDIO", "ALTO")).build()
+                )).build();
+
+        FormDefinition formInspeccion = FormDefinition.builder()
+                .formId("form-vivienda-inspeccion")
+                .fields(List.of(
+                        FormField.builder().fieldId("valor_tasacion").type("NUMBER").label("Valor de tasación (Bs)").required(true).build(),
+                        FormField.builder().fieldId("estado_inmueble").type("SELECT").label("Estado del inmueble").required(true)
+                                .options(List.of("BUENO", "REGULAR", "MALO")).build(),
+                        FormField.builder().fieldId("informe").type("TEXTAREA").label("Informe técnico").required(true).build()
+                )).build();
+
+        FormDefinition formDecision = FormDefinition.builder()
+                .formId("form-vivienda-decision")
+                .fields(List.of(
+                        FormField.builder().fieldId("decision").type("SELECT").label("Decisión final").required(true)
+                                .options(List.of("APROBADO", "RECHAZADO", "CONDICIONADO")).build(),
+                        FormField.builder().fieldId("tasa_interes").type("NUMBER").label("Tasa de interés anual (%)").required(false).build(),
+                        FormField.builder().fieldId("plazo_meses").type("SELECT").label("Plazo (meses)").required(false)
+                                .options(List.of("60", "120", "180", "240")).build(),
+                        FormField.builder().fieldId("comentario").type("TEXTAREA").label("Comentario final").required(false).build()
+                )).build();
+
+        return List.of(
+                WorkflowNode.builder().nodeId("cv-start").type(NodeType.START).label("Inicio").build(),
+                WorkflowNode.builder().nodeId("cv-verificacion").type(NodeType.MANUAL_FORM)
+                        .label("Verificación Inicial").areaId(atencionId).slaHours(8).form(formVerificacion).build(),
+                WorkflowNode.builder().nodeId("cv-docs").type(NodeType.CLIENT_TASK)
+                        .label("Documentos del Solicitante").areaId(atencionId).slaHours(72).form(formDocs).build(),
+                WorkflowNode.builder().nodeId("cv-evaluacion").type(NodeType.MANUAL_ACTION)
+                        .label("Evaluación Crediticia").areaId(analisisId).slaHours(48).form(formEvaluacion).build(),
+                WorkflowNode.builder().nodeId("cv-inspeccion").type(NodeType.MANUAL_ACTION)
+                        .label("Inspección del Inmueble").areaId(revisionId).slaHours(72).form(formInspeccion).build(),
+                WorkflowNode.builder().nodeId("cv-decision").type(NodeType.MANUAL_ACTION)
+                        .label("Decisión Final").areaId(analisisId).slaHours(24).form(formDecision).build(),
+                WorkflowNode.builder().nodeId("cv-end-ok").type(NodeType.END).label("Crédito Aprobado").build(),
+                WorkflowNode.builder().nodeId("cv-end-nok").type(NodeType.END).label("Crédito Rechazado").build()
+        );
+    }
+
+    private List<WorkflowTransition> buildViviendaTransitions() {
+        return List.of(
+                WorkflowTransition.builder().transitionId("cv-t1").from("cv-start").to("cv-verificacion").build(),
+                WorkflowTransition.builder().transitionId("cv-t2").from("cv-verificacion").to("cv-docs").build(),
+                WorkflowTransition.builder().transitionId("cv-t3").from("cv-docs").to("cv-evaluacion").build(),
+                WorkflowTransition.builder().transitionId("cv-t4").from("cv-evaluacion").to("cv-inspeccion").build(),
+                WorkflowTransition.builder().transitionId("cv-t5").from("cv-inspeccion").to("cv-decision").build(),
+                WorkflowTransition.builder().transitionId("cv-t6").from("cv-decision").to("cv-end-ok")
+                        .condition("decision == APROBADO || decision == CONDICIONADO").label("Aprobado / Condicionado").build(),
+                WorkflowTransition.builder().transitionId("cv-t7").from("cv-decision").to("cv-end-nok")
+                        .condition("decision == RECHAZADO").label("Rechazado").build()
+        );
+    }
+
+    // ── Officers extra (idempotente por email) ────────────────────────────────
+    private void seedExtraOfficers(String orgId, String revisionId, String analisisId) {
+        if (userRepository.findByEmail("officer.revision@demo.com").isEmpty()) {
+            userRepository.save(User.builder()
+                    .email("officer.revision@demo.com")
+                    .password(passwordEncoder.encode(demoPassword))
+                    .fullName("Juan Mamani")
+                    .roles(List.of(Role.OFFICER))
+                    .areaId(revisionId)
+                    .organizationId(orgId)
+                    .active(true)
+                    .createdAt(Instant.now())
+                    .build());
+            log.info("Officer 'officer.revision@demo.com' creado (Revisión Técnica).");
+        }
+        if (userRepository.findByEmail("officer.analisis@demo.com").isEmpty()) {
+            userRepository.save(User.builder()
+                    .email("officer.analisis@demo.com")
+                    .password(passwordEncoder.encode(demoPassword))
+                    .fullName("Ana Torres")
+                    .roles(List.of(Role.OFFICER))
+                    .areaId(analisisId)
+                    .organizationId(orgId)
+                    .active(true)
+                    .createdAt(Instant.now())
+                    .build());
+            log.info("Officer 'officer.analisis@demo.com' creado (Análisis Crediticio).");
+        }
     }
 }
