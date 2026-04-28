@@ -11,6 +11,7 @@ public record AnalyzeBottlenecksRequest(
             String nodeId,
             String label,
             double avgDurationHours,
+            Double expectedHours,
             int pendingTasks,
             int completedTasks,
             int cancelledTasks

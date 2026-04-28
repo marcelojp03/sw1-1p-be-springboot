@@ -9,6 +9,8 @@ import sw1.p1.ai.domain.AiLog;
 import sw1.p1.ai.domain.AiLogRepository;
 import sw1.p1.ai.dto.AnalyzeBottlenecksRequest;
 import sw1.p1.ai.dto.AnalyzeBottlenecksResponse;
+import sw1.p1.ai.dto.GenerateDiagramRequest;
+import sw1.p1.ai.dto.GenerateDiagramResponse;
 import sw1.p1.ai.dto.SuggestFormFieldsRequest;
 import sw1.p1.ai.dto.SuggestFormFieldsResponse;
 import sw1.p1.ai.dto.SuggestWorkflowRequest;
@@ -25,7 +27,7 @@ public class AiIntegrationService {
     private final AiLogRepository aiLogRepository;
     private final UserRepository userRepository;
 
-    public SuggestWorkflowResponse suggestWorkflow(SuggestWorkflowRequest request, String organizationId) {
+    public SuggestWorkflowResponse suggestWorkflow(SuggestWorkflowRequest request, String organizationId, String policyId) {
         long start = System.currentTimeMillis();
         String userId = currentUserId();
         try {
@@ -35,17 +37,17 @@ public class AiIntegrationService {
                     .retrieve()
                     .bodyToMono(SuggestWorkflowResponse.class)
                     .block();
-            saveLog(userId, organizationId, null, "WORKFLOW_DESIGN", request, response,
+            saveLog(userId, organizationId, policyId, "WORKFLOW_DESIGN", request, response,
                     System.currentTimeMillis() - start, true, null);
             return response;
         } catch (WebClientResponseException ex) {
-            saveLog(userId, organizationId, null, "WORKFLOW_DESIGN", request, null,
+            saveLog(userId, organizationId, policyId, "WORKFLOW_DESIGN", request, null,
                     System.currentTimeMillis() - start, false, ex.getMessage());
             throw new RuntimeException("Error al consultar IA para sugerir workflow: " + ex.getMessage(), ex);
         }
     }
 
-    public SuggestFormFieldsResponse suggestFormFields(SuggestFormFieldsRequest request, String organizationId) {
+    public SuggestFormFieldsResponse suggestFormFields(SuggestFormFieldsRequest request, String organizationId, String policyId) {
         long start = System.currentTimeMillis();
         String userId = currentUserId();
         try {
@@ -55,17 +57,17 @@ public class AiIntegrationService {
                     .retrieve()
                     .bodyToMono(SuggestFormFieldsResponse.class)
                     .block();
-            saveLog(userId, organizationId, null, "FORM_SUGGESTION", request, response,
+            saveLog(userId, organizationId, policyId, "FORM_SUGGESTION", request, response,
                     System.currentTimeMillis() - start, true, null);
             return response;
         } catch (WebClientResponseException ex) {
-            saveLog(userId, organizationId, null, "FORM_SUGGESTION", request, null,
+            saveLog(userId, organizationId, policyId, "FORM_SUGGESTION", request, null,
                     System.currentTimeMillis() - start, false, ex.getMessage());
             throw new RuntimeException("Error al consultar IA para sugerir campos: " + ex.getMessage(), ex);
         }
     }
 
-    public AnalyzeBottlenecksResponse analyzeBottlenecks(AnalyzeBottlenecksRequest request, String organizationId) {
+    public AnalyzeBottlenecksResponse analyzeBottlenecks(AnalyzeBottlenecksRequest request, String organizationId, String policyId) {
         long start = System.currentTimeMillis();
         String userId = currentUserId();
         try {
@@ -75,13 +77,33 @@ public class AiIntegrationService {
                     .retrieve()
                     .bodyToMono(AnalyzeBottlenecksResponse.class)
                     .block();
-            saveLog(userId, organizationId, null, "BOTTLENECK_ANALYSIS", request, response,
+            saveLog(userId, organizationId, policyId, "BOTTLENECK_ANALYSIS", request, response,
                     System.currentTimeMillis() - start, true, null);
             return response;
         } catch (WebClientResponseException ex) {
-            saveLog(userId, organizationId, null, "BOTTLENECK_ANALYSIS", request, null,
+            saveLog(userId, organizationId, policyId, "BOTTLENECK_ANALYSIS", request, null,
                     System.currentTimeMillis() - start, false, ex.getMessage());
             throw new RuntimeException("Error al consultar IA para análisis de cuellos de botella: " + ex.getMessage(), ex);
+        }
+    }
+
+    public GenerateDiagramResponse generateDiagram(GenerateDiagramRequest request, String organizationId, String policyId) {
+        long start = System.currentTimeMillis();
+        String userId = currentUserId();
+        try {
+            GenerateDiagramResponse response = fastapiWebClient.post()
+                    .uri("/api/ai/generate-diagram")
+                    .bodyValue(request)
+                    .retrieve()
+                    .bodyToMono(GenerateDiagramResponse.class)
+                    .block();
+            saveLog(userId, organizationId, policyId, "DIAGRAM_GENERATION", request, response,
+                    System.currentTimeMillis() - start, true, null);
+            return response;
+        } catch (WebClientResponseException ex) {
+            saveLog(userId, organizationId, policyId, "DIAGRAM_GENERATION", request, null,
+                    System.currentTimeMillis() - start, false, ex.getMessage());
+            throw new RuntimeException("Error al consultar IA para generar diagrama: " + ex.getMessage(), ex);
         }
     }
 

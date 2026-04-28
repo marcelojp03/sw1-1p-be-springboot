@@ -115,8 +115,13 @@ public class WorkflowEngineService {
             }
 
             case NOTIFICATION -> {
+                String tmpl = node.getNotificationTemplate();
                 recordHistory(procedure.getId(), node, "NOTIFICATION_SENT", actorId,
-                        null, node.getNotificationTemplate());
+                        null, tmpl);
+                // Enviar notificación push al cliente si hay clientId y plantilla
+                if (procedure.getClientId() != null) {
+                    sendNotificationToClient(procedure, node.getLabel(), tmpl);
+                }
                 procedureRepository.save(procedure);
                 // Las notificaciones no detienen el flujo; avanzar automáticamente
                 advanceAutomatic(procedure, node.getNodeId(), actorId);
@@ -240,6 +245,27 @@ public class WorkflowEngineService {
             ));
         } catch (Exception e) {
             log.warn("No se pudo enviar notificación para el trámite {}: {}", procedure.getCode(), e.getMessage());
+        }
+    }
+
+    /** Envía notificación push al cliente desde un nodo NOTIFICATION */
+    private void sendNotificationToClient(Procedure procedure, String title, String message) {
+        try {
+            String body = (message != null && !message.isBlank()) ? message
+                    : "Su trámite " + procedure.getCode() + " ha sido actualizado.";
+            notificationService.create(new CreateNotificationRequest(
+                    procedure.getOrganizationId(),
+                    procedure.getClientId(),
+                    null,
+                    procedure.getCode(),
+                    "NOTIFICATION",
+                    title != null ? title : "Actualización de trámite",
+                    body,
+                    procedure.getId(),
+                    null
+            ));
+        } catch (Exception e) {
+            log.warn("No se pudo enviar notificación al cliente para trámite {}: {}", procedure.getCode(), e.getMessage());
         }
     }
 

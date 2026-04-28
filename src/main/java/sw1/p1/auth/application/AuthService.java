@@ -32,7 +32,7 @@ public class AuthService {
         User user = userRepository.findByEmail(request.email())
                 .orElseThrow();
 
-        String token = jwtTokenProvider.generateToken(user.getEmail());
+        String token = jwtTokenProvider.generateToken(user.getEmail(), user.getId(), user.getOrganizationId());
 
         return new LoginResponse(
                 token,

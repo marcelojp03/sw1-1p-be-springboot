@@ -24,16 +24,21 @@ public class JwtTokenProvider {
         this.expirationMs = expirationMs;
     }
 
-    public String generateToken(String username) {
+    public String generateToken(String username, String userId, String organizationId) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + expirationMs);
 
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .subject(username)
                 .issuedAt(now)
                 .expiration(expiry)
-                .signWith(key)
-                .compact();
+                .claim("userId", userId);
+
+        if (organizationId != null && !organizationId.isBlank()) {
+            builder.claim("organizationId", organizationId);
+        }
+
+        return builder.signWith(key).compact();
     }
 
     public String getUsernameFromToken(String token) {

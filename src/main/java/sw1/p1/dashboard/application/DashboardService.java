@@ -13,6 +13,8 @@ import sw1.p1.dashboard.dto.AverageTimeByNodeResponse;
 import sw1.p1.dashboard.dto.DashboardSummaryResponse;
 import sw1.p1.dashboard.dto.ProceduresByStatusResponse;
 import sw1.p1.dashboard.dto.TaskOverdueResponse;
+import sw1.p1.policy.domain.WorkflowNode;
+import sw1.p1.policy.domain.WorkflowPolicy;
 import sw1.p1.procedure.domain.Procedure;
 import sw1.p1.procedure.domain.ProcedureRepository;
 import sw1.p1.shared.ProcedureStatus;
@@ -23,6 +25,7 @@ import sw1.p1.task.domain.TaskRepository;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -175,6 +178,33 @@ public class DashboardService {
 
         List<Task> completedTasks = mongoTemplate.find(Query.query(criteria), Task.class);
 
+        // Construir mapa nodeId → slaHours desde la(s) política(s) relevante(s)
+        Map<String, Integer> nodeExpectedHoursMap = new HashMap<>();
+        if (policyId != null && !policyId.isBlank()) {
+            WorkflowPolicy policy = mongoTemplate.findById(policyId, WorkflowPolicy.class);
+            if (policy != null && policy.getNodes() != null) {
+                for (WorkflowNode node : policy.getNodes()) {
+                    if (node.getNodeId() != null && node.getSlaHours() != null) {
+                        nodeExpectedHoursMap.put(node.getNodeId(), node.getSlaHours());
+                    }
+                }
+            }
+        } else {
+            // Sin filtro de política: buscar todas las políticas de la organización
+            List<WorkflowPolicy> policies = mongoTemplate.find(
+                    Query.query(Criteria.where("organizationId").is(organizationId)),
+                    WorkflowPolicy.class);
+            for (WorkflowPolicy policy : policies) {
+                if (policy.getNodes() != null) {
+                    for (WorkflowNode node : policy.getNodes()) {
+                        if (node.getNodeId() != null && node.getSlaHours() != null) {
+                            nodeExpectedHoursMap.putIfAbsent(node.getNodeId(), node.getSlaHours());
+                        }
+                    }
+                }
+            }
+        }
+
         // Agrupar por nodeId y calcular promedio con Java streams
         Map<String, List<Task>> byNode = completedTasks.stream()
                 .filter(t -> t.getNodeId() != null)
@@ -193,7 +223,9 @@ public class DashboardService {
                             .mapToDouble(t -> ChronoUnit.SECONDS.between(t.getCreatedAt(), t.getCompletedAt()) / 3600.0)
                             .average()
                             .orElse(0.0);
-                    return new AverageTimeByNodeResponse(nodeId, nodeLabel, avgHours, nodeTasks.size());
+                    Integer slaHours = nodeExpectedHoursMap.get(nodeId);
+                    Double expectedHours = slaHours != null ? slaHours.doubleValue() : null;
+                    return new AverageTimeByNodeResponse(nodeId, nodeLabel, avgHours, nodeTasks.size(), expectedHours);
                 })
                 .sorted(java.util.Comparator.comparing(AverageTimeByNodeResponse::nodeLabel))
                 .collect(Collectors.toList());

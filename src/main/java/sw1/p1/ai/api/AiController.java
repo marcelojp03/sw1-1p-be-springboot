@@ -10,6 +10,8 @@ import org.springframework.web.bind.annotation.RestController;
 import sw1.p1.ai.application.AiIntegrationService;
 import sw1.p1.ai.dto.AnalyzeBottlenecksRequest;
 import sw1.p1.ai.dto.AnalyzeBottlenecksResponse;
+import sw1.p1.ai.dto.GenerateDiagramRequest;
+import sw1.p1.ai.dto.GenerateDiagramResponse;
 import sw1.p1.ai.dto.SuggestFormFieldsRequest;
 import sw1.p1.ai.dto.SuggestFormFieldsResponse;
 import sw1.p1.ai.dto.SuggestWorkflowRequest;
@@ -26,24 +28,36 @@ public class AiController {
     @PostMapping("/suggest-workflow")
     public SuggestWorkflowResponse suggestWorkflow(
             @RequestBody SuggestWorkflowRequest request,
-            @RequestParam String organizationId
+            @RequestParam String organizationId,
+            @RequestParam(required = false) String policyId
     ) {
-        return aiIntegrationService.suggestWorkflow(request, organizationId);
+        return aiIntegrationService.suggestWorkflow(request, organizationId, policyId);
     }
 
     @PostMapping("/suggest-form-fields")
     public SuggestFormFieldsResponse suggestFormFields(
             @RequestBody SuggestFormFieldsRequest request,
-            @RequestParam String organizationId
+            @RequestParam String organizationId,
+            @RequestParam(required = false) String policyId
     ) {
-        return aiIntegrationService.suggestFormFields(request, organizationId);
+        return aiIntegrationService.suggestFormFields(request, organizationId, policyId);
     }
 
     @PostMapping("/analyze-bottlenecks")
     public AnalyzeBottlenecksResponse analyzeBottlenecks(
             @RequestBody AnalyzeBottlenecksRequest request,
-            @RequestParam String organizationId
+            @RequestParam String organizationId,
+            @RequestParam(required = false) String policyId
     ) {
-        return aiIntegrationService.analyzeBottlenecks(request, organizationId);
+        return aiIntegrationService.analyzeBottlenecks(request, organizationId, policyId);
+    }
+
+    @PostMapping("/generate-diagram")
+    public GenerateDiagramResponse generateDiagram(
+            @RequestBody GenerateDiagramRequest request,
+            @RequestParam String organizationId,
+            @RequestParam(required = false) String policyId
+    ) {
+        return aiIntegrationService.generateDiagram(request, organizationId, policyId);
     }
 }

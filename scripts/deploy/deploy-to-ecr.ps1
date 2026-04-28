@@ -57,7 +57,7 @@ if (-not $dockerRunning) {
 # Variables ECR
 $AWS_REGION = "us-east-1"
 $AWS_ACCOUNT_ID = "851725478821"
-$ECR_REPO_NAME = "si2-sia-springboot"
+$ECR_REPO_NAME = "sw1-1p-springboot"
 $ECR_URI = "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO_NAME"
 
 # Obtener la ruta del proyecto (dos niveles arriba de scripts/deploy/)

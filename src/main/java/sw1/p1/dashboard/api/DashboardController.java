@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import sw1.p1.config.WebSocketSessionTracker;
 import sw1.p1.dashboard.application.DashboardService;
 import sw1.p1.dashboard.dto.AverageTimeByNodeResponse;
 import sw1.p1.dashboard.dto.DashboardSummaryResponse;
@@ -14,6 +15,7 @@ import sw1.p1.dashboard.dto.ProceduresByStatusResponse;
 import sw1.p1.dashboard.dto.TaskOverdueResponse;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/dashboard")
@@ -22,6 +24,7 @@ import java.util.List;
 public class DashboardController {
 
     private final DashboardService dashboardService;
+    private final WebSocketSessionTracker sessionTracker;
 
     @GetMapping("/summary")
     public DashboardSummaryResponse summary(@RequestParam String organizationId) {
@@ -54,5 +57,10 @@ public class DashboardController {
             @RequestParam(required = false) String policyId
     ) {
         return dashboardService.getAverageTimeByNode(organizationId, policyId);
+    }
+
+    @GetMapping("/connected-users")
+    public Map<String, Integer> connectedUsers() {
+        return Map.of("count", sessionTracker.getConnectedCount());
     }
 }

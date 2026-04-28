@@ -1,0 +1,10 @@
+.git/
+.gitignore
+target/
+*.md
+.env
+.env.*
+scripts/
+*.iml
+.idea/
+.vscode/

@@ -4,5 +4,6 @@ public record AverageTimeByNodeResponse(
         String nodeId,
         String nodeLabel,
         double avgDurationHours,
-        long completedCount
+        long completedCount,
+        Double expectedHours
 ) {}
