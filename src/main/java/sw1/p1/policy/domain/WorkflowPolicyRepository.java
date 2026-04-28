@@ -21,9 +21,6 @@ public interface WorkflowPolicyRepository extends MongoRepository<WorkflowPolicy
     Optional<WorkflowPolicy> findByOrganizationIdAndPolicyKeyAndStatus(
             String organizationId, String policyKey, PolicyStatus status);
 
-    Optional<WorkflowPolicy> findByOrganizationIdAndPolicyKeyAndVersion(
-            String organizationId, String policyKey, int version);
-
     boolean existsByOrganizationIdAndPolicyKeyAndStatus(
             String organizationId, String policyKey, PolicyStatus status);
 

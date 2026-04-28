@@ -659,7 +659,7 @@ public class DemoDataInitializer implements ApplicationRunner {
 
         // ── apertura_cuenta ────────────────────────────────────────────────────
         workflowPolicyRepository
-                .findByOrganizationIdAndPolicyKeyAndVersion(orgId, "apertura_cuenta", 1)
+                .findByOrganizationIdAndPolicyKeyAndStatus(orgId, "apertura_cuenta", PolicyStatus.DRAFT)
                 .ifPresentOrElse(policy -> {
                     if (policy.getNodes() == null || policy.getNodes().isEmpty()) {
                         policy.setAllowedStartChannels(List.of("WEB"));
@@ -686,7 +686,7 @@ public class DemoDataInitializer implements ApplicationRunner {
 
         // ── credito_vivienda ───────────────────────────────────────────────────
         workflowPolicyRepository
-                .findByOrganizationIdAndPolicyKeyAndVersion(orgId, "credito_vivienda", 1)
+                .findByOrganizationIdAndPolicyKeyAndStatus(orgId, "credito_vivienda", PolicyStatus.DRAFT)
                 .ifPresentOrElse(policy -> {
                     if (policy.getNodes() == null || policy.getNodes().isEmpty()) {
                         policy.setAllowedStartChannels(List.of("MOBILE"));
