@@ -30,7 +30,7 @@ app:
     base-url: ${FASTAPI_BASE_URL:http://localhost:8001}
     internal-key: ${FASTAPI_INTERNAL_KEY:internal-dev-key}
   websocket:
-    allowed-origins: ${WS_ALLOWED_ORIGINS:http://localhost:4200}
+    allowed-origins: ${WS_ALLOWED_ORIGINS:http://localhost:4200,https://d1780yz6azpd7k.cloudfront.net,http://sw1-1p-fe.s3-website-us-east-1.amazonaws.com,https://sw1-1p-fe.s3-website-us-east-1.amazonaws.com}
   admin:
     username: ${ADMIN_USERNAME:admin}
     email: ${ADMIN_EMAIL:admin@example.com}
