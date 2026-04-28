@@ -34,6 +34,7 @@ import sw1.p1.task.domain.Task;
 import sw1.p1.task.domain.TaskRepository;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Pageable;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -97,6 +98,20 @@ public class DemoDataInitializer implements ApplicationRunner {
 
             // Officers extra (idempotente)
             seedExtraOfficers(existingOrgId, revisionId, analisisId);
+
+            // Corregir tarea demo mal sembrada (IN_PROGRESS sin asignado → PENDING)
+            taskRepository.findByProcedureIdAndNodeId(
+                    procedureRepository.findByOrganizationId(existingOrgId, Pageable.unpaged())
+                            .stream().filter(p -> "TRM-2026-0001".equals(p.getCode()))
+                            .findFirst().map(p -> p.getId()).orElse("__none__"),
+                    "node-form2"
+            ).stream()
+            .filter(t -> t.getStatus() == TaskStatus.IN_PROGRESS && t.getAssignedUserId() == null)
+            .forEach(t -> {
+                t.setStatus(TaskStatus.PENDING);
+                taskRepository.save(t);
+                log.info("Tarea demo TRM-2026-0001/node-form2 corregida a PENDING.");
+            });
 
             log.info("Datos demo ya existen, omitiendo seed completo.");
             return;
@@ -439,7 +454,7 @@ public class DemoDataInitializer implements ApplicationRunner {
                 .organizationId(orgId)
                 .assignedAreaId(areaAnalisisId)
                 .taskAudience(TaskAudience.INTERNAL)
-                .status(TaskStatus.IN_PROGRESS)
+                .status(TaskStatus.PENDING)
                 .form(nodeAnalisis.getForm())
                 .createdAt(Instant.now().minus(2, ChronoUnit.DAYS))
                 .dueAt(Instant.now().plus(1, ChronoUnit.DAYS))
