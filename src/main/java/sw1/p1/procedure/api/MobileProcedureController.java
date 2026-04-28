@@ -44,6 +44,12 @@ public class MobileProcedureController {
         return mobileService.myProcedures(pageable);
     }
 
+    /** Trámites del cliente autenticado (alias sin paginación para Flutter) */
+    @GetMapping("/procedures/my")
+    public Page<ProcedureSummaryResponse> myProceduresAlias(Pageable pageable) {
+        return mobileService.myProcedures(pageable);
+    }
+
     /** Detalle de un trámite */
     @GetMapping("/procedures/{id}")
     public ProcedureResponse findById(@PathVariable String id) {
