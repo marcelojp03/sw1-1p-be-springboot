@@ -25,7 +25,7 @@ app:
     secret: ${JWT_SECRET}
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}
   cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200,https://d1780yz6azpd7k.cloudfront.net}
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200,https://d1780yz6azpd7k.cloudfront.net,http://sw1-1p-fe.s3-website-us-east-1.amazonaws.com,https://sw1-1p-fe.s3-website-us-east-1.amazonaws.com}
   fastapi:
     base-url: ${FASTAPI_BASE_URL:http://localhost:8001}
     internal-key: ${FASTAPI_INTERNAL_KEY:internal-dev-key}
