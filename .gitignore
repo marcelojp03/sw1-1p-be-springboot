@@ -8,6 +8,9 @@ target/
 .apt_generated
 .classpath
 .factorypath
+
+# GitHub Copilot instructions — no subir al repositorio
+.github/
 .project
 .settings
 .springBeans
