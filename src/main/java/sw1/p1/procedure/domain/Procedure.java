@@ -63,6 +63,12 @@ public class Procedure {
     /** Canal por el que se inició: "WEB" o "MOBILE" */
     private String startChannel;
 
+    /**
+     * Referencias a documentos adjuntados durante el trámite (Ciclo 2).
+     * Vinculan documentos del repositorio documental con este procedimiento.
+     */
+    private List<String> documentRefs;
+
     private Instant startedAt;
     private Instant completedAt;
     private Instant createdAt;

@@ -6,6 +6,9 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import sw1.p1.shared.NodeType;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /** Nodo del diagrama de actividad, embebido en WorkflowPolicy */
 @Data
 @NoArgsConstructor
@@ -34,4 +37,12 @@ public class WorkflowNode {
 
     /** Plantilla de mensaje (para NOTIFICATION) */
     private String notificationTemplate;
+
+    /** IDs de documentos requeridos en este nodo (Ciclo 2) */
+    @Builder.Default
+    private List<String> documentIds = new ArrayList<>();
+
+    /** Nombres/tipos de documentos que el cliente debe adjuntar en este nodo */
+    @Builder.Default
+    private List<String> requiredDocuments = new ArrayList<>();
 }

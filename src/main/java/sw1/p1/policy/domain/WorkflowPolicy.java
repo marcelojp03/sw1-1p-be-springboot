@@ -69,6 +69,10 @@ public class WorkflowPolicy {
     @Builder.Default
     private List<Swimlane> swimlanes = new ArrayList<>();
 
+    /** IDs de documentos (repositorio documental) vinculados a esta política */
+    @Builder.Default
+    private List<String> documentIds = new ArrayList<>();
+
     private String createdBy;
 
     private String publishedBy;
