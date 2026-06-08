@@ -41,6 +41,18 @@ app:
       region: ${AWS_DEFAULT_REGION:us-east-1}
   demo:
     password: ${DEMO_PASSWORD:}
+  base-url: ${APP_BASE_URL:http://localhost:8080}
+
+onlyoffice:
+  url: ${ONLYOFFICE_URL:http://localhost:8083}
+  jwt-secret: ${ONLYOFFICE_JWT_SECRET:onlyoffice-secret-key}
+  callback-base-url: ${ONLYOFFICE_CALLBACK_BASE_URL:http://host.docker.internal:8080}
+
+dynamodb:
+  table-prefix: ${DYNAMODB_TABLE_PREFIX:sw1}
+
+signing:
+  service-url: ${SIGNING_SERVICE_URL:http://localhost:9090}
 
 logging:
   level:

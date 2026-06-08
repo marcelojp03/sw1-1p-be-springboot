@@ -77,6 +77,29 @@ public class StorageService {
     }
 
     /**
+     * Descarga el contenido de un objeto S3 como arreglo de bytes.
+     * Usado por DocumentSigningService para enviar el archivo al servicio de firma.
+     */
+    public byte[] download(String storageKey) {
+        return s3Client.getObjectAsBytes(r -> r.bucket(bucket).key(storageKey)).asByteArray();
+    }
+
+    /**
+     * Sube bytes crudos a S3 (sin validación de extensión).
+     * Usado para subir versiones firmadas o convertidas (SIGNED / EDITABLE).
+     */
+    public void uploadBytes(byte[] content, String storageKey, String contentType) {
+        s3Client.putObject(
+                PutObjectRequest.builder()
+                        .bucket(bucket)
+                        .key(storageKey)
+                        .contentType(contentType)
+                        .contentLength((long) content.length)
+                        .build(),
+                RequestBody.fromBytes(content));
+    }
+
+    /**
      * Elimina un objeto del bucket S3 (usado en rollback).
      */
     public void delete(String storageKey) {

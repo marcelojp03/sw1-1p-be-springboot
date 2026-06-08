@@ -12,6 +12,19 @@ services:
     volumes:
       - mongo_data:/data/db
 
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    container_name: workflow-onlyoffice
+    restart: unless-stopped
+    ports:
+      - "8083:80"
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-onlyoffice-secret-key}
+    volumes:
+      - onlyoffice_data:/var/www/onlyoffice/Data
+      - onlyoffice_log:/var/log/onlyoffice
+
   app:
     build: .
     container_name: workflow-backend
@@ -24,8 +37,11 @@ services:
       - .env
     environment:
       MONGODB_URI: mongodb://root:root@mongodb:27017/workflow_db?authSource=admin
+      ONLYOFFICE_CALLBACK_BASE_URL: http://app:8080
     profiles:
       - full
 
 volumes:
   mongo_data:
+  onlyoffice_data:
+  onlyoffice_log:
