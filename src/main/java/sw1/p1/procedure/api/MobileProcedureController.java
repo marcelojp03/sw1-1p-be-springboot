@@ -19,6 +19,7 @@ import sw1.p1.task.dto.CompleteTaskRequest;
 import sw1.p1.task.dto.TaskResponse;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/mobile")
@@ -91,6 +92,14 @@ public class MobileProcedureController {
             @PathVariable String id,
             @RequestParam("files") MultipartFile[] files) {
         return mobileService.uploadAttachments(id, files);
+    }
+
+    /** Obtener URL pre-firmada para descargar un attachment */
+    @GetMapping("/tasks/{id}/attachments/{fileName}/download-url")
+    public Map<String, String> getAttachmentDownloadUrl(
+            @PathVariable String id,
+            @PathVariable String fileName) {
+        return mobileService.getAttachmentDownloadUrl(id, fileName);
     }
 
     // ── Notificaciones ─────────────────────────────────────────────────────────

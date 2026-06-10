@@ -20,6 +20,7 @@ import sw1.p1.task.domain.Task;
 import sw1.p1.task.domain.TaskRepository;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -77,10 +78,14 @@ public class WorkflowEngineService {
         }
 
         WorkflowNode nextNode = findNode(nodes, nextTransition.getTo());
-        procedure.setCurrentNodeIds(List.of(nextNode.getNodeId()));
         procedure.setUpdatedAt(Instant.now());
 
-        processNode(procedure, nextNode, actorId);
+        if (nextNode.getType() == NodeType.PARALLEL_JOIN) {
+            handleParallelJoin(procedure, completedNodeId, nextNode, actorId, formData);
+        } else {
+            procedure.setCurrentNodeIds(List.of(nextNode.getNodeId()));
+            processNode(procedure, nextNode, actorId);
+        }
     }
 
     /**
@@ -146,6 +151,28 @@ public class WorkflowEngineService {
                 procedure.setCurrentNodeIds(List.of(branchNode.getNodeId()));
                 procedureRepository.save(procedure);
                 processNode(procedure, branchNode, actorId);
+            }
+
+            case PARALLEL_SPLIT -> {
+                recordHistory(procedure.getId(), node, "PARALLEL_SPLIT", actorId, null, null);
+                List<WorkflowTransition> outgoing = procedure.getPolicySnapshot().getTransitions().stream()
+                        .filter(t -> t.getFrom().equals(node.getNodeId()))
+                        .toList();
+                List<String> terminals = new ArrayList<>();
+                for (WorkflowTransition t : outgoing) {
+                    WorkflowNode branchStart = findNode(procedure.getPolicySnapshot().getNodes(), t.getTo());
+                    recordHistory(procedure.getId(), branchStart, "PARALLEL_BRANCH_STARTED", actorId, null, null);
+                    terminals.addAll(activateBranch(procedure, branchStart, actorId));
+                }
+                procedure.setCurrentNodeIds(terminals.stream().distinct().toList());
+                procedure.setStatus(ProcedureStatus.IN_PROGRESS);
+                procedure.setUpdatedAt(Instant.now());
+                procedureRepository.save(procedure);
+            }
+
+            case PARALLEL_JOIN -> {
+                log.warn("PARALLEL_JOIN alcanzado directamente desde processNode (sin advance). Verificando…");
+                handleParallelJoin(procedure, null, node, actorId, null);
             }
 
             case AUTOMATIC -> {
@@ -307,37 +334,98 @@ public class WorkflowEngineService {
 
     /**
      * Evalúa una condición simple del tipo "fieldId == value" o "fieldId != value".
+     * Busca el fieldId primero en lastFormData, luego en allFormData (acumulado).
      */
     private boolean evaluateSimpleCondition(String condition,
                                              Map<String, Object> lastFormData,
                                              Map<String, Map<String, Object>> allFormData) {
         if (condition == null || condition.isBlank()) return true;
-        if (lastFormData == null) return false;
 
         try {
+            String fieldId;
+            String expectedValue;
+            boolean isEquality;
+
             if (condition.contains("!=")) {
                 String[] parts = condition.split("!=", 2);
-                Object val = lastFormData.get(parts[0].trim());
-                return val != null && !val.toString().equalsIgnoreCase(parts[1].trim());
-            }
-            if (condition.contains("==")) {
+                fieldId = parts[0].trim();
+                expectedValue = parts[1].trim();
+                isEquality = false;
+            } else if (condition.contains("==")) {
                 String[] parts = condition.split("==", 2);
-                Object val = lastFormData.get(parts[0].trim());
-                return val != null && val.toString().equalsIgnoreCase(parts[1].trim());
+                fieldId = parts[0].trim();
+                expectedValue = parts[1].trim();
+                isEquality = true;
+            } else {
+                return false;
             }
+
+            Object actual = resolveFieldValue(fieldId, lastFormData, allFormData);
+            if (actual == null) return false;
+
+            boolean match = actual.toString().equalsIgnoreCase(expectedValue);
+            return isEquality == match;
         } catch (Exception e) {
             log.warn("Error al evaluar condición '{}': {}", condition, e.getMessage());
         }
         return false;
     }
 
+    private Object resolveFieldValue(String fieldId,
+                                      Map<String, Object> lastFormData,
+                                      Map<String, Map<String, Object>> allFormData) {
+        if (lastFormData != null && lastFormData.containsKey(fieldId)) {
+            return lastFormData.get(fieldId);
+        }
+        if (allFormData != null) {
+            for (Map<String, Object> nodeForm : allFormData.values()) {
+                if (nodeForm != null && nodeForm.containsKey(fieldId)) {
+                    return nodeForm.get(fieldId);
+                }
+            }
+        }
+        return null;
+    }
+
     /**
      * Evaluación de nodo CONDITION.
-     * Retorna "true" o "false" (o el valor del campo de decisión si está definido).
+     * Evalúa cada transición saliente contra los formData acumulados
+     * y retorna la etiqueta de la primera que coincida.
+     * Si ninguna condición coincide, toma la transición por defecto (sin condición).
      */
     private String evaluateCondition(Procedure procedure, WorkflowNode node) {
-        // Por ahora: siempre "true". Se puede extender con scripting o SpEL.
-        log.debug("Evaluando nodo CONDITION {} — devolviendo 'true' por defecto", node.getNodeId());
+        Map<String, Map<String, Object>> allFormData = procedure.getFormData();
+
+        // Último formData disponible: el del nodo inmediatamente anterior
+        Map<String, Object> lastFormData = null;
+        if (allFormData != null && !allFormData.isEmpty()) {
+            List<String> keys = new ArrayList<>(allFormData.keySet());
+            lastFormData = allFormData.get(keys.getLast());
+        }
+
+        List<WorkflowTransition> outgoing = procedure.getPolicySnapshot().getTransitions().stream()
+                .filter(t -> t.getFrom().equals(node.getNodeId()))
+                .toList();
+
+        String defaultLabel = null;
+
+        for (WorkflowTransition t : outgoing) {
+            if (t.getCondition() == null || t.getCondition().isBlank()) {
+                if (defaultLabel == null) defaultLabel = t.getLabel();
+                continue;
+            }
+            if (evaluateSimpleCondition(t.getCondition(), lastFormData, allFormData)) {
+                log.debug("CONDITION {} → coincide con transición '{}'", node.getNodeId(), t.getLabel());
+                return t.getLabel();
+            }
+        }
+
+        if (defaultLabel != null) {
+            log.debug("CONDITION {} → sin condiciones coincidentes, usa default '{}'", node.getNodeId(), defaultLabel);
+            return defaultLabel;
+        }
+
+        log.debug("CONDITION {} → sin transiciones, retorna 'true'", node.getNodeId());
         return "true";
     }
 
@@ -363,6 +451,123 @@ public class WorkflowEngineService {
                 .occurredAt(Instant.now())
                 .build();
         historyRepository.save(event);
+    }
+
+    // ── Parallel split / join ──────────────────────────────────────────────
+
+    /**
+     * Activa una rama desde su nodo inicial, recorriendo nodos automáticos
+     * hasta llegar a un nodo que crea tarea (MANUAL_FORM, MANUAL_ACTION, CLIENT_TASK)
+     * y devuelve los nodeId terminales activos.
+     */
+    private List<String> activateBranch(Procedure procedure, WorkflowNode node, String actorId) {
+        return switch (node.getType()) {
+            case MANUAL_FORM, MANUAL_ACTION -> {
+                createInternalTask(procedure, node);
+                yield List.of(node.getNodeId());
+            }
+            case CLIENT_TASK -> {
+                Task task = createClientTask(procedure, node);
+                notifyClient(procedure, task);
+                yield List.of(node.getNodeId());
+            }
+            case NOTIFICATION -> {
+                if (procedure.getClientId() != null) {
+                    sendNotificationToClient(procedure, node.getLabel(), node.getNotificationTemplate());
+                }
+                yield advanceThroughAuto(procedure, node.getNodeId(), actorId);
+            }
+            case AUTOMATIC -> advanceThroughAuto(procedure, node.getNodeId(), actorId);
+            case CONDITION -> {
+                String result = evaluateCondition(procedure, node);
+                List<WorkflowTransition> branches = procedure.getPolicySnapshot().getTransitions().stream()
+                        .filter(t -> t.getFrom().equals(node.getNodeId()))
+                        .filter(t -> result.equalsIgnoreCase(t.getLabel())
+                                || result.equalsIgnoreCase(t.getCondition()))
+                        .toList();
+                if (branches.isEmpty()) yield List.of();
+                WorkflowNode next = findNode(procedure.getPolicySnapshot().getNodes(), branches.getFirst().getTo());
+                yield activateBranch(procedure, next, actorId);
+            }
+            case PARALLEL_SPLIT -> {
+                List<WorkflowTransition> outgoing = procedure.getPolicySnapshot().getTransitions().stream()
+                        .filter(t -> t.getFrom().equals(node.getNodeId()))
+                        .toList();
+                List<String> terminals = new ArrayList<>();
+                for (WorkflowTransition t : outgoing) {
+                    WorkflowNode branchStart = findNode(procedure.getPolicySnapshot().getNodes(), t.getTo());
+                    terminals.addAll(activateBranch(procedure, branchStart, actorId));
+                }
+                yield terminals;
+            }
+            default -> List.of(node.getNodeId());
+        };
+    }
+
+    /**
+     * Avanza automáticamente por nodos sin intervención humana
+     * hasta dar con un nodo que cree una tarea. Usado desde activateBranch.
+     */
+    private List<String> advanceThroughAuto(Procedure procedure, String fromNodeId, String actorId) {
+        List<WorkflowTransition> outgoing = procedure.getPolicySnapshot().getTransitions().stream()
+                .filter(t -> t.getFrom().equals(fromNodeId) && t.getCondition() == null)
+                .toList();
+        if (outgoing.isEmpty()) return List.of();
+        WorkflowNode next = findNode(procedure.getPolicySnapshot().getNodes(), outgoing.getFirst().getTo());
+        return activateBranch(procedure, next, actorId);
+    }
+
+    /**
+     * Maneja la llegada de una rama paralela a un nodo PARALLEL_JOIN.
+     * Acumula las ramas que ya llegaron y cuando todas completan,
+     * avanza más allá del join.
+     */
+    private void handleParallelJoin(Procedure procedure, String completedNodeId,
+                                     WorkflowNode joinNode, String actorId,
+                                     Map<String, Object> formData) {
+        List<String> currentIds = new ArrayList<>(procedure.getCurrentNodeIds());
+
+        if (completedNodeId != null) {
+            recordHistory(procedure.getId(), joinNode, "PARALLEL_BRANCH_ARRIVED", actorId, formData,
+                    "branch=" + completedNodeId);
+            currentIds.remove(completedNodeId);
+        }
+
+        List<WorkflowTransition> incoming = procedure.getPolicySnapshot().getTransitions().stream()
+                .filter(t -> t.getTo().equals(joinNode.getNodeId()))
+                .toList();
+
+        boolean allArrived = incoming.stream()
+                .allMatch(t -> !currentIds.contains(t.getFrom()));
+
+        if (allArrived) {
+            log.info("Todas las ramas paralelas llegaron al join {} en trámite {}",
+                    joinNode.getNodeId(), procedure.getId());
+            recordHistory(procedure.getId(), joinNode, "PARALLEL_JOIN_COMPLETED", actorId, null, null);
+
+            List<WorkflowTransition> outgoing = procedure.getPolicySnapshot().getTransitions().stream()
+                    .filter(t -> t.getFrom().equals(joinNode.getNodeId()))
+                    .toList();
+
+            if (outgoing.isEmpty()) {
+                procedure.setCurrentNodeIds(List.of());
+                procedure.setUpdatedAt(Instant.now());
+                procedureRepository.save(procedure);
+            } else {
+                WorkflowNode nextNode = findNode(procedure.getPolicySnapshot().getNodes(), outgoing.getFirst().getTo());
+                procedure.setCurrentNodeIds(List.of(nextNode.getNodeId()));
+                procedure.setUpdatedAt(Instant.now());
+                procedure.setStatus(ProcedureStatus.IN_PROGRESS);
+                procedureRepository.save(procedure);
+                processNode(procedure, nextNode, actorId);
+            }
+        } else {
+            log.info("Join {} esperando ramas restantes en trámite {} (activos: {})",
+                    joinNode.getNodeId(), procedure.getId(), currentIds);
+            procedure.setCurrentNodeIds(currentIds);
+            procedure.setUpdatedAt(Instant.now());
+            procedureRepository.save(procedure);
+        }
     }
 
     /**

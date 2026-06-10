@@ -7,10 +7,15 @@ import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
+import software.amazon.awssdk.services.dynamodb.model.QueryResponse;
 import sw1.p1.document.domain.AuditAction;
+import sw1.p1.document.dto.AuditLogResponse;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -28,6 +33,31 @@ public class DocumentAuditService {
 
     @Value("${dynamodb.table-prefix:sw1}")
     private String tablePrefix;
+
+    public List<AuditLogResponse> queryByDocumentId(String documentId) {
+        String tableName = tablePrefix + "_document_audit_logs";
+
+        Map<String, AttributeValue> eav = Map.of(":docId", attr(documentId));
+
+        QueryRequest request = QueryRequest.builder()
+                .tableName(tableName)
+                .keyConditionExpression("documentId = :docId")
+                .expressionAttributeValues(eav)
+                .scanIndexForward(false)
+                .build();
+
+        try {
+            QueryResponse response = dynamoDbClient.query(request);
+            List<AuditLogResponse> logs = new ArrayList<>();
+            for (Map<String, AttributeValue> item : response.items()) {
+                logs.add(AuditLogResponse.fromDynamoItem(item));
+            }
+            return logs;
+        } catch (Exception e) {
+            log.error("Error querying audit logs for document {}: {}", documentId, e.getMessage());
+            return List.of();
+        }
+    }
 
     public void log(String documentId, String versionId, AuditAction action,
                     String performedBy, String detail) {

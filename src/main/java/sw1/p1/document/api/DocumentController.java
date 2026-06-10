@@ -6,6 +6,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import sw1.p1.document.application.DocumentAuditService;
 import sw1.p1.document.application.DocumentService;
 import sw1.p1.document.application.DocumentSigningService;
 import sw1.p1.document.domain.DocumentStatus;
@@ -22,6 +23,7 @@ public class DocumentController {
 
     private final DocumentService documentService;
     private final DocumentSigningService signingService;
+    private final DocumentAuditService auditService;
 
     // ── Documento ──────────────────────────────────────────────────────────────
 
@@ -105,6 +107,14 @@ public class DocumentController {
             @RequestBody Map<String, Object> payload) {
         documentService.onlyOfficeCallback(id, payload);
         return ResponseEntity.ok(Map.of("error", 0));
+    }
+
+    // ── Auditoría documental ───────────────────────────────────────────────────
+
+    @GetMapping("/{id}/audit-logs")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OFFICER')")
+    public ResponseEntity<List<AuditLogResponse>> getAuditLogs(@PathVariable String id) {
+        return ResponseEntity.ok(auditService.queryByDocumentId(id));
     }
 
     // ── Firma electrónica asistida ─────────────────────────────────────────────

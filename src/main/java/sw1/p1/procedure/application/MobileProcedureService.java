@@ -30,11 +30,13 @@ import sw1.p1.task.dto.CompleteTaskRequest;
 import sw1.p1.task.dto.TaskResponse;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -212,6 +214,23 @@ public class MobileProcedureService {
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     /** Agregar archivos a una CLIENT_TASK subiéndolos a S3 y registrando un evento por archivo */
+    public Map<String, String> getAttachmentDownloadUrl(String taskId, String fileName) {
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new NotFoundException("Tarea no encontrada: " + taskId));
+
+        if (task.getAttachments() == null) {
+            throw new NotFoundException("La tarea no tiene archivos adjuntos");
+        }
+
+        AttachmentRef ref = task.getAttachments().stream()
+                .filter(a -> a.getFileName().equals(fileName))
+                .findFirst()
+                .orElseThrow(() -> new NotFoundException("Archivo no encontrado: " + fileName));
+
+        String url = storageService.generatePresignedUrl(ref.getStorageKey(), Duration.ofHours(1));
+        return Map.of("url", url, "fileName", ref.getFileName());
+    }
+
     public TaskResponse uploadAttachments(String taskId, MultipartFile[] files) {
         Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new NotFoundException("Tarea no encontrada: " + taskId));
