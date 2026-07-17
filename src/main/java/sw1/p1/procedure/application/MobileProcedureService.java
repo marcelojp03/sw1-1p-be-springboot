@@ -18,6 +18,8 @@ import sw1.p1.policy.domain.PolicyVersionRepository;
 import sw1.p1.policy.domain.WorkflowPolicy;
 import sw1.p1.policy.domain.WorkflowPolicyRepository;
 import sw1.p1.procedure.domain.*;
+import sw1.p1.procedure.dto.MobileProcedureDetailResponse;
+import sw1.p1.procedure.dto.MobileProcedureSummaryResponse;
 import sw1.p1.procedure.dto.ProcedureResponse;
 import sw1.p1.procedure.dto.ProcedureSummaryResponse;
 import sw1.p1.procedure.dto.StartProcedureRequest;
@@ -90,6 +92,23 @@ public class MobileProcedureService {
             throw new NotFoundException("Trámite no encontrado: " + id);
         }
         return toResponse(procedure);
+    }
+
+    // ── Mobile DTOs ──────────────────────────────────────────────────────────
+
+    public Page<MobileProcedureSummaryResponse> myProceduresMobile(Pageable pageable) {
+        String clientId = currentClientId();
+        return procedureRepository.findByClientId(clientId, pageable)
+                .map(this::toMobileSummary);
+    }
+
+    public MobileProcedureDetailResponse findByIdMobile(String id) {
+        String clientId = currentClientId();
+        Procedure procedure = getOrThrow(id);
+        if (!clientId.equals(procedure.getClientId())) {
+            throw new NotFoundException("Trámite no encontrado: " + id);
+        }
+        return toMobileDetail(procedure);
     }
 
     public List<ProcedureHistory> getHistory(String procedureId) {
@@ -342,6 +361,46 @@ public class MobileProcedureService {
                 p.getStatus(), p.getPolicySnapshot(), p.getFormData(), p.getStartChannel(),
                 p.getStartedAt(), p.getCompletedAt(), p.getCreatedAt(), p.getUpdatedAt()
         );
+    }
+
+    // ── Mobile DTO conversion ───────────────────────────────────────────────
+
+    private MobileProcedureSummaryResponse toMobileSummary(Procedure p) {
+        PolicySnapshot snap = p.getPolicySnapshot();
+        String currentNodeId = firstCurrentNodeId(p);
+        return new MobileProcedureSummaryResponse(
+                p.getId(), p.getCode(), p.getPolicyId(), p.getPolicyVersionId(),
+                snap != null ? snap.getPolicyName() : null,
+                p.getStatus(), currentNodeId,
+                resolveStepLabel(snap, currentNodeId),
+                p.getStartedAt(), p.getUpdatedAt(), p.getCompletedAt()
+        );
+    }
+
+    private MobileProcedureDetailResponse toMobileDetail(Procedure p) {
+        PolicySnapshot snap = p.getPolicySnapshot();
+        String currentNodeId = firstCurrentNodeId(p);
+        return new MobileProcedureDetailResponse(
+                p.getId(), p.getCode(), p.getPolicyId(), p.getPolicyVersionId(),
+                snap != null ? snap.getPolicyName() : null,
+                p.getStatus(), currentNodeId,
+                resolveStepLabel(snap, currentNodeId),
+                p.getStartedAt(), p.getUpdatedAt(), p.getCompletedAt()
+        );
+    }
+
+    private String firstCurrentNodeId(Procedure p) {
+        var ids = p.getCurrentNodeIds();
+        return ids != null && !ids.isEmpty() ? ids.get(0) : null;
+    }
+
+    private String resolveStepLabel(PolicySnapshot snap, String nodeId) {
+        if (snap == null || nodeId == null || snap.getNodes() == null) return null;
+        return snap.getNodes().stream()
+                .filter(n -> nodeId.equals(n.getNodeId()))
+                .findFirst()
+                .map(n -> n.getLabel() != null && !n.getLabel().isBlank() ? n.getLabel() : null)
+                .orElse(null);
     }
 
     private ProcedureSummaryResponse toSummary(Procedure p) {
