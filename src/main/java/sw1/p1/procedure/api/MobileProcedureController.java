@@ -14,6 +14,8 @@ import sw1.p1.policy.dto.AvailablePolicyResponse;
 import sw1.p1.procedure.application.MobileProcedureService;
 import sw1.p1.procedure.application.ProcedureService;
 import sw1.p1.procedure.domain.ProcedureHistory;
+import sw1.p1.procedure.dto.MobileProcedureDetailResponse;
+import sw1.p1.procedure.dto.MobileProcedureSummaryResponse;
 import sw1.p1.procedure.dto.ProcedureResponse;
 import sw1.p1.procedure.dto.ProcedureSummaryResponse;
 import sw1.p1.procedure.dto.StartProcedureRequest;
