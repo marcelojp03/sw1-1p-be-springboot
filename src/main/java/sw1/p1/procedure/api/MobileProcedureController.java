@@ -20,6 +20,7 @@ import sw1.p1.procedure.dto.ProcedureResponse;
 import sw1.p1.procedure.dto.ProcedureSummaryResponse;
 import sw1.p1.procedure.dto.StartProcedureRequest;
 import sw1.p1.task.dto.CompleteTaskRequest;
+import sw1.p1.task.dto.MobileTaskResponse;
 import sw1.p1.task.dto.TaskResponse;
 
 import java.util.List;
@@ -88,18 +89,17 @@ public class MobileProcedureController {
 
     /** CLIENT_TASKs pendientes del cliente autenticado */
     @GetMapping("/tasks")
-    public Page<TaskResponse> myTasks(Pageable pageable) {
+    public Page<MobileTaskResponse> myTasks(Pageable pageable) {
         return mobileService.myTasks(pageable);
     }
 
     @GetMapping("/tasks/{id}")
-    public TaskResponse getTask(@PathVariable String id) {
+    public MobileTaskResponse getTask(@PathVariable String id) {
         return mobileService.findTaskById(id);
     }
 
-    /** Completar una CLIENT_TASK */
     @PostMapping("/tasks/{id}/complete")
-    public TaskResponse completeTask(@PathVariable String id,
+    public MobileTaskResponse completeTask(@PathVariable String id,
                                      @Valid @RequestBody CompleteTaskRequest request) {
         return mobileService.completeTask(id, request);
     }

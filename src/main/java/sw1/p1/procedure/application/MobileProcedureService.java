@@ -35,6 +35,7 @@ import sw1.p1.policy.dto.AvailablePolicyResponse;
 import sw1.p1.task.domain.Task;
 import sw1.p1.task.domain.TaskRepository;
 import sw1.p1.task.dto.CompleteTaskRequest;
+import sw1.p1.task.dto.MobileTaskResponse;
 import sw1.p1.task.dto.TaskResponse;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -222,10 +223,10 @@ public class MobileProcedureService {
 
     public Page<TaskResponse> myTasks(Pageable pageable) {        String clientId = currentClientId();
         return taskRepository.findByAssignedClientIdAndTaskAudience(clientId, TaskAudience.CLIENT, pageable)
-                .map(this::toTaskResponse);
+                .map(this::toMobileTaskResponse);
     }
 
-    public TaskResponse findTaskById(String taskId) {
+    public MobileTaskResponse findTaskById(String taskId) {
         Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new NotFoundException("Tarea no encontrada: " + taskId));
         if (task.getTaskAudience() != TaskAudience.CLIENT) {
@@ -235,10 +236,10 @@ public class MobileProcedureService {
         if (!clientId.equals(task.getAssignedClientId())) {
             throw new org.springframework.security.access.AccessDeniedException("No tiene permiso para ver esta tarea");
         }
-        return toTaskResponse(task);
+        return toMobileTaskResponse(task);
     }
 
-    public TaskResponse completeTask(String taskId, CompleteTaskRequest request) {
+    public MobileTaskResponse completeTask(String taskId, CompleteTaskRequest request) {
         Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new NotFoundException("Tarea no encontrada: " + taskId));
 
@@ -271,10 +272,8 @@ public class MobileProcedureService {
 
         workflowEngine.advance(procedure, task.getNodeId(), userId, request.formResponse());
 
-        return toTaskResponse(task);
+        return toMobileTaskResponse(task);
     }
-
-    // ── Helpers ──────────────────────────────────────────────────────────────
 
     /** Agregar archivos a una CLIENT_TASK subiéndolos a S3 y registrando un evento por archivo */
     public Map<String, String> getAttachmentDownloadUrl(String taskId, String fileName) {

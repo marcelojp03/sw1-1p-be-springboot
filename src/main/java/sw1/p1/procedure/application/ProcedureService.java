@@ -125,8 +125,10 @@ public class ProcedureService {
 
         PolicySnapshot snapshot = PolicySnapshot.builder()
                 .policyId(policyId)
-                .policyKey("v" + version.getVersionNumber())
-                .policyName("Policy " + policyId)
+                .policyKey(version.getPolicyId() + "-v" + version.getVersionNumber())
+                .policyName(policyRepository.findById(policyId)
+                        .map(WorkflowPolicy::getName)
+                        .orElse("Política " + policyId))
                 .version(version.getVersionNumber())
                 .nodes(def.nodes())
                 .transitions(def.transitions())
