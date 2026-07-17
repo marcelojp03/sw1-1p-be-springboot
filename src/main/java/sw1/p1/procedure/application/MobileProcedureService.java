@@ -43,6 +43,7 @@ import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -171,27 +172,33 @@ public class MobileProcedureService {
     }
 
     /** Políticas disponibles para iniciar trámites desde canal MOBILE */
-    public List<AvailablePolicyResponse> availablePolicies(String organizationId) {
+    public List<AvailablePolicyResponse> availablePolicies() {
+        String organizationId = currentClient().getOrganizationId();
         return policyRepository
                 .findByOrganizationIdAndAllowedStartChannelsContaining(
                         organizationId, "MOBILE")
                 .stream()
-                .filter(p -> versionRepository
-                        .findTopByPolicyIdAndStatusOrderByVersionNumberDesc(
-                                p.getId(), PolicyVersionStatus.PUBLISHED)
-                        .isPresent())
                 .map(p -> {
-                    String pvId = versionRepository
+                    PolicyVersion published = versionRepository
                             .findTopByPolicyIdAndStatusOrderByVersionNumberDesc(
                                     p.getId(), PolicyVersionStatus.PUBLISHED)
-                            .map(PolicyVersion::getId)
-                            .orElseThrow(); // nunca debería llegar aquí por el filter
+                            .orElse(null);
+                    if (published == null) return null;
                     return new AvailablePolicyResponse(
                             p.getId(), p.getPolicyKey(), p.getName(),
-                            p.getDescription(), pvId,
-                            p.getVersion(), p.getAllowedStartChannels());
+                            p.getDescription(), published.getId(),
+                            published.getVersionNumber(), p.getAllowedStartChannels());
                 })
+                .filter(Objects::nonNull)
                 .toList();
+    }
+
+    private Client currentClient() {
+        String email = SecurityContextHolder.getContext().getAuthentication().getName();
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new BusinessException("Usuario autenticado no encontrado"));
+        return clientRepository.findByUserId(user.getId())
+                .orElseThrow(() -> new BusinessException("El usuario no tiene un cliente asociado"));
     }
 
     public Page<TaskResponse> myTasks(Pageable pageable) {        String clientId = currentClientId();

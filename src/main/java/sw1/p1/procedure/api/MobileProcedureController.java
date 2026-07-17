@@ -36,8 +36,8 @@ public class MobileProcedureController {
 
     /** Políticas PUBLISHED que permiten inicio por canal MOBILE */
     @GetMapping("/workflow-policies/available")
-    public List<AvailablePolicyResponse> availablePolicies(@RequestParam String organizationId) {
-        return mobileService.availablePolicies(organizationId);
+    public List<AvailablePolicyResponse> availablePolicies() {
+        return mobileService.availablePolicies();
     }
 
     // ── Trámites ───────────────────────────────────────────────────────────────
