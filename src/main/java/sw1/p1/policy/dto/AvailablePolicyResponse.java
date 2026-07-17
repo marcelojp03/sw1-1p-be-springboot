@@ -7,6 +7,7 @@ public record AvailablePolicyResponse(
         String policyKey,
         String name,
         String description,
+        String policyVersionId,
         int version,
         List<String> allowedStartChannels
 ) {}

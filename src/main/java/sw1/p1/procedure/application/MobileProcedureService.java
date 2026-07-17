@@ -9,8 +9,12 @@ import sw1.p1.auth.domain.User;
 import sw1.p1.auth.domain.UserRepository;
 import sw1.p1.client.domain.Client;
 import sw1.p1.client.domain.ClientRepository;
+import sw1.p1.exception.ConflictException;
 import sw1.p1.exception.BusinessException;
 import sw1.p1.exception.NotFoundException;
+import sw1.p1.shared.PolicyVersionStatus;
+import sw1.p1.policy.domain.PolicyVersion;
+import sw1.p1.policy.domain.PolicyVersionRepository;
 import sw1.p1.policy.domain.WorkflowPolicy;
 import sw1.p1.policy.domain.WorkflowPolicyRepository;
 import sw1.p1.procedure.domain.*;
@@ -47,6 +51,7 @@ public class MobileProcedureService {
     private final ProcedureRepository procedureRepository;
     private final ProcedureHistoryRepository historyRepository;
     private final WorkflowPolicyRepository policyRepository;
+    private final PolicyVersionRepository versionRepository;
     private final UserRepository userRepository;
     private final ClientRepository clientRepository;
     private final TaskRepository taskRepository;
@@ -171,9 +176,17 @@ public class MobileProcedureService {
                 .findByOrganizationIdAndStatusAndAllowedStartChannelsContaining(
                         organizationId, PolicyStatus.PUBLISHED, "MOBILE")
                 .stream()
-                .map(p -> new AvailablePolicyResponse(
-                        p.getId(), p.getPolicyKey(), p.getName(),
-                        p.getDescription(), p.getVersion(), p.getAllowedStartChannels()))
+                .map(p -> {
+                    String pvId = versionRepository
+                            .findTopByPolicyIdAndStatusOrderByVersionNumberDesc(
+                                    p.getId(), PolicyVersionStatus.PUBLISHED)
+                            .map(PolicyVersion::getId)
+                            .orElse(null);
+                    return new AvailablePolicyResponse(
+                            p.getId(), p.getPolicyKey(), p.getName(),
+                            p.getDescription(), pvId,
+                            p.getVersion(), p.getAllowedStartChannels());
+                })
                 .toList();
     }
 
