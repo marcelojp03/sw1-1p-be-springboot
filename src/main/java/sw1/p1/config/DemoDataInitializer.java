@@ -32,6 +32,8 @@ import sw1.p1.shared.TaskAudience;
 import sw1.p1.shared.TaskStatus;
 import sw1.p1.task.domain.Task;
 import sw1.p1.task.domain.TaskRepository;
+import sw1.p1.client.domain.Client;
+import sw1.p1.client.domain.ClientRepository;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Pageable;
@@ -56,6 +58,7 @@ public class DemoDataInitializer implements ApplicationRunner {
 
     private final OrganizationRepository organizationRepository;
     private final UserRepository userRepository;
+    private final ClientRepository clientRepository;
     private final WorkflowPolicyRepository workflowPolicyRepository;
     private final ProcedureRepository procedureRepository;
     private final ProcedureHistoryRepository procedureHistoryRepository;
@@ -98,6 +101,9 @@ public class DemoDataInitializer implements ApplicationRunner {
 
             // Officers extra (idempotente)
             seedExtraOfficers(existingOrgId, revisionId, analisisId);
+
+            // Vincular cliente demo (idempotente, siempre se ejecuta)
+            ensureClientLinked(existingOrgId);
 
             // Corregir tarea demo mal sembrada (IN_PROGRESS sin asignado → PENDING)
             taskRepository.findByProcedureIdAndNodeId(
@@ -695,5 +701,39 @@ public class DemoDataInitializer implements ApplicationRunner {
                     .build());
             log.info("Officer 'officer.analisis@demo.com' creado (Análisis Crediticio).");
         }
+    }
+
+    private void ensureClientLinked(String orgId) {
+        var user = userRepository.findByEmail("cliente@demo.com").orElse(null);
+        if (user == null) {
+            log.warn("No existe el usuario cliente@demo.com");
+            return;
+        }
+
+        if (clientRepository.findByUserId(user.getId()).isPresent()) {
+            log.info("Cliente demo ya vinculado: userId={}", user.getId());
+            return;
+        }
+
+        Client client = clientRepository.findByDocumentNumberAndOrganizationId("87654321", orgId)
+                .orElse(null);
+        if (client == null) {
+            client = Client.builder()
+                    .userId(user.getId())
+                    .organizationId(orgId)
+                    .fullName("María García")
+                    .documentType("CI")
+                    .documentNumber("87654321")
+                    .email("cliente@demo.com")
+                    .phone("70000002")
+                    .createdAt(Instant.now())
+                    .build();
+        } else {
+            client.setUserId(user.getId());
+        }
+        clientRepository.save(client);
+        user.setClientId(client.getId());
+        userRepository.save(user);
+        log.info("Cliente demo vinculado: userId={}, clientId={}", user.getId(), client.getId());
     }
 }

@@ -15,6 +15,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Set;
 
 @Component
 @RequiredArgsConstructor
@@ -22,6 +23,23 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
     private final UserDetailsService userDetailsService;
+
+    private static final Set<String> PUBLIC_PATHS = Set.of(
+            "/api/auth/login",
+            "/api/auth/register"
+    );
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String path = request.getServletPath();
+        String method = request.getMethod();
+
+        return "OPTIONS".equals(method)
+                || PUBLIC_PATHS.contains(path)
+                || path.startsWith("/ws/")
+                || ("POST".equals(method) && path.matches("/api/documents/[^/]+/onlyoffice/callback"))
+                || ("GET".equals(method) && path.matches("/api/documents/[^/]+/versions/[^/]+/download"));
+    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -31,7 +49,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String token = extractToken(request);
 
-        if (StringUtils.hasText(token) && jwtTokenProvider.validateToken(token)) {
+        if (StringUtils.hasText(token) && jwtTokenProvider.validateToken(token, request.getMethod() + " " + request.getServletPath())) {
             String username = jwtTokenProvider.getUsernameFromToken(token);
             UserDetails userDetails = userDetailsService.loadUserByUsername(username);
 

@@ -82,4 +82,10 @@ public class WorkflowPolicy {
     private Instant createdAt;
 
     private Instant updatedAt;
+
+    /** ID de la PolicyVersion DRAFT actual (opcional) */
+    private String currentDraftVersionId;
+
+    /** ID de la PolicyVersion PUBLISHED más reciente */
+    private String latestPublishedVersionId;
 }

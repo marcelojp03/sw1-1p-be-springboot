@@ -5,7 +5,9 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import sw1.p1.auth.domain.User;
 import sw1.p1.auth.domain.UserRepository;
+import sw1.p1.client.domain.Client;
 import sw1.p1.client.domain.ClientRepository;
 import sw1.p1.exception.BusinessException;
 import sw1.p1.exception.NotFoundException;
@@ -54,10 +56,12 @@ public class MobileProcedureService {
 
     /** Obtiene el clientId del usuario autenticado */
     private String currentClientId() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByEmail(username)
-                .map(u -> u.getClientId())
-                .orElseThrow(() -> new BusinessException("El usuario no tiene un clientId asociado"));
+        String email = SecurityContextHolder.getContext().getAuthentication().getName();
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new BusinessException("Usuario autenticado no encontrado"));
+        return clientRepository.findByUserId(user.getId())
+                .map(Client::getId)
+                .orElseThrow(() -> new BusinessException("El usuario no tiene un cliente asociado"));
     }
 
     private String currentUserId() {
@@ -191,6 +195,9 @@ public class MobileProcedureService {
             throw new BusinessException("No tiene permiso para completar esta tarea");
         }
 
+        if (task.getStatus() == TaskStatus.COMPLETED) {
+            throw new ConflictException("La tarea ya fue completada");
+        }
         if (task.getStatus() != TaskStatus.PENDING && task.getStatus() != TaskStatus.IN_PROGRESS) {
             throw new BusinessException("La tarea no puede completarse en su estado actual");
         }
@@ -292,7 +299,8 @@ public class MobileProcedureService {
 
     private ProcedureResponse toResponse(Procedure p) {
         return new ProcedureResponse(
-                p.getId(), p.getCode(), p.getOrganizationId(), p.getPolicyId(), p.getPolicyVersion(),
+                p.getId(), p.getCode(), p.getOrganizationId(), p.getPolicyId(),
+                p.getPolicyVersionId(), p.getPolicyVersion(),
                 p.getClientId(), p.getStartedBy(), p.getRequester(), p.getCurrentNodeIds(),
                 p.getStatus(), p.getPolicySnapshot(), p.getFormData(), p.getStartChannel(),
                 p.getStartedAt(), p.getCompletedAt(), p.getCreatedAt(), p.getUpdatedAt()

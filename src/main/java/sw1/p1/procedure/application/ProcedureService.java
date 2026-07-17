@@ -10,8 +10,9 @@ import sw1.p1.client.domain.Client;
 import sw1.p1.client.domain.ClientRepository;
 import sw1.p1.exception.BusinessException;
 import sw1.p1.exception.NotFoundException;
-import sw1.p1.policy.domain.WorkflowPolicy;
-import sw1.p1.policy.domain.WorkflowPolicyRepository;
+import sw1.p1.policy.domain.*;
+import sw1.p1.policy.domain.PolicyVersionRepository;
+import sw1.p1.policy.domain.NodeConfigurationRepository;
 import sw1.p1.procedure.domain.*;
 import sw1.p1.procedure.dto.ProcedureResponse;
 import sw1.p1.procedure.dto.ProcedureSummaryResponse;
@@ -31,6 +32,9 @@ public class ProcedureService {
     private final ProcedureRepository procedureRepository;
     private final ProcedureHistoryRepository historyRepository;
     private final WorkflowPolicyRepository policyRepository;
+    private final PolicyVersionRepository versionRepository;
+    private final NodeConfigurationRepository nodeConfigRepository;
+    private final BpmnExecutionAdapter bpmnAdapter;
     private final UserRepository userRepository;
     private final ClientRepository clientRepository;
     private final WorkflowEngineService workflowEngine;
@@ -103,6 +107,69 @@ public class ProcedureService {
         return toResponse(procedure);
     }
 
+    public ProcedureResponse startFromVersion(String policyId, String versionId,
+                                               String clientId, String organizationId) {
+        PolicyVersion version = versionRepository.findById(versionId)
+                .orElseThrow(() -> new NotFoundException("Versión no encontrada: " + versionId));
+
+        if (!version.getPolicyId().equals(policyId)) {
+            throw new BusinessException("La versión no pertenece a esta política");
+        }
+
+        List<NodeConfiguration> configs = nodeConfigRepository.findByPolicyVersionId(versionId);
+        BpmnExecutionAdapter.BpmnProcessDefinition def = bpmnAdapter.parse(version, configs);
+
+        String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
+        String startedBy = userRepository.findByEmail(currentUsername)
+                .map(u -> u.getId()).orElse(null);
+
+        PolicySnapshot snapshot = PolicySnapshot.builder()
+                .policyId(policyId)
+                .policyKey("v" + version.getVersionNumber())
+                .policyName("Policy " + policyId)
+                .version(version.getVersionNumber())
+                .nodes(def.nodes())
+                .transitions(def.transitions())
+                .snapshotAt(Instant.now())
+                .build();
+
+        Instant now = Instant.now();
+        long sequential = procedureRepository.count() + 1;
+        int year = ZonedDateTime.now(ZoneOffset.UTC).getYear();
+        String code = String.format("TRM-%d-%04d", year, sequential);
+
+        Procedure procedure = Procedure.builder()
+                .code(code)
+                .organizationId(organizationId)
+                .policyId(policyId)
+                .policyVersionId(versionId)
+                .policyVersion(version.getVersionNumber())
+                .clientId(clientId)
+                .startedBy(startedBy)
+                .status(ProcedureStatus.CREATED)
+                .policySnapshot(snapshot)
+                .startChannel("WEB")
+                .startedAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+
+        procedure = procedureRepository.save(procedure);
+        workflowEngine.start(procedure, startedBy);
+        procedure = getOrThrow(procedure.getId());
+        return toResponse(procedure);
+    }
+
+    public ProcedureResponse startFromVersionForClient(String policyId, String versionId,
+                                                        org.springframework.security.core.Authentication auth) {
+        String email = auth.getName();
+        var user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new NotFoundException("Usuario no encontrado: " + email));
+        Client client = clientRepository.findByUserId(user.getId())
+                .orElseThrow(() -> new NotFoundException("Cliente no encontrado para el usuario: " + email));
+        return startFromVersion(policyId, versionId, client.getId(), client.getOrganizationId());
+    }
+
     public Page<ProcedureSummaryResponse> findByOrganization(String organizationId, Pageable pageable) {
         return procedureRepository.findByOrganizationId(organizationId, pageable)
                 .map(this::toSummary);
@@ -135,7 +202,8 @@ public class ProcedureService {
 
     private ProcedureResponse toResponse(Procedure p) {
         return new ProcedureResponse(
-                p.getId(), p.getCode(), p.getOrganizationId(), p.getPolicyId(), p.getPolicyVersion(),
+                p.getId(), p.getCode(), p.getOrganizationId(), p.getPolicyId(),
+                p.getPolicyVersionId(), p.getPolicyVersion(),
                 p.getClientId(), p.getStartedBy(), p.getRequester(), p.getCurrentNodeIds(),
                 p.getStatus(), p.getPolicySnapshot(), p.getFormData(), p.getStartChannel(),
                 p.getStartedAt(), p.getCompletedAt(), p.getCreatedAt(), p.getUpdatedAt()

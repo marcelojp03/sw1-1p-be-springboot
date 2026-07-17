@@ -27,6 +27,7 @@ public class StorageService {
             Set.of("jpg", "jpeg", "png", "pdf", "docx", "xlsx");
 
     private final S3Client s3Client;
+    private final S3Presigner s3Presigner;
 
     @Value("${app.aws.s3.bucket}")
     private String bucket;
@@ -67,13 +68,11 @@ public class StorageService {
      * Genera una URL pre-firmada temporal de descarga para un storageKey dado.
      */
     public String generatePresignedUrl(String storageKey, Duration expiry) {
-        try (S3Presigner presigner = S3Presigner.create()) {
-            GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
-                    .signatureDuration(expiry)
-                    .getObjectRequest(r -> r.bucket(bucket).key(storageKey))
-                    .build();
-            return presigner.presignGetObject(presignRequest).url().toString();
-        }
+        GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+                .signatureDuration(expiry)
+                .getObjectRequest(r -> r.bucket(bucket).key(storageKey))
+                .build();
+        return s3Presigner.presignGetObject(presignRequest).url().toString();
     }
 
     /**

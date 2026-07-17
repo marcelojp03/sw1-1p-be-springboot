@@ -13,6 +13,7 @@ public record ProcedureResponse(
         String code,
         String organizationId,
         String policyId,
+        String policyVersionId,
         int policyVersion,
         String clientId,
         String startedBy,

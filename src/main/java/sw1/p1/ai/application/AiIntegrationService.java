@@ -1,7 +1,12 @@
 package sw1.p1.ai.application;
 
+import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
+import org.bson.Document;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.AggregationOperation;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -38,9 +43,14 @@ import sw1.p1.policyrequest.dto.CreatePolicyRequestCommand;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AiIntegrationService {
 
     private static final double POLICY_CONFIDENCE_THRESHOLD = 40.0;
@@ -49,6 +59,7 @@ public class AiIntegrationService {
     private final AiLogRepository aiLogRepository;
     private final UserRepository userRepository;
     private final PolicyRequestService policyRequestService;
+    private final MongoTemplate mongoTemplate;
     private final org.springframework.web.client.RestTemplate restTemplate;
     private final org.springframework.core.env.Environment env;
 
@@ -190,16 +201,48 @@ public class AiIntegrationService {
         }
     }
 
+    @SuppressWarnings("unchecked")
     public NlReportResponse nlReport(NlReportRequest request) {
         long start = System.currentTimeMillis();
         String userId = currentUserId();
         try {
-            NlReportResponse response = fastapiWebClient.post()
+            NlReportResponse fastapiResponse = fastapiWebClient.post()
                     .uri("/api/ai/nl-report")
                     .bodyValue(request)
                     .retrieve()
                     .bodyToMono(NlReportResponse.class)
                     .block();
+
+            if (fastapiResponse == null || fastapiResponse.results().isEmpty()) {
+                saveLog(userId, request.organizationId(), null, "NL_REPORT", request, fastapiResponse,
+                        System.currentTimeMillis() - start, true, null);
+                return fastapiResponse;
+            }
+
+            // Extract pipeline and collection from first result
+            Map<String, Object> firstResult = fastapiResponse.results().getFirst();
+            List<Map<String, Object>> pipelineRaw = (List<Map<String, Object>>) firstResult.get("pipeline");
+            String collection = (String) firstResult.getOrDefault("collection", "procedures");
+
+            // Convert raw pipeline to AggregationOperation list
+            List<AggregationOperation> operations = new ArrayList<>();
+            for (Map<String, Object> stage : pipelineRaw) {
+                Document doc = new Document(stage);
+                operations.add(context -> doc);
+            }
+
+            // Execute aggregation
+            Aggregation aggregation = Aggregation.newAggregation(operations);
+            List<Document> results = mongoTemplate.aggregate(aggregation, collection, Document.class)
+                    .getMappedResults();
+
+            log.info("NL report executed — collection={} stages={} results={}",
+                    collection, operations.size(), results.size());
+
+            NlReportResponse response = new NlReportResponse(
+                    results.stream().map(d -> (Map<String, Object>) new HashMap<>(d)).toList(),
+                    fastapiResponse.queryUsed());
+
             saveLog(userId, request.organizationId(), null, "NL_REPORT", request, response,
                     System.currentTimeMillis() - start, true, null);
             return response;

@@ -9,6 +9,7 @@ import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.LockedException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -74,6 +75,14 @@ public class GlobalExceptionHandler {
         log.warn("Método no soportado: {} {}", ex.getMethod(), request.getRequestURI());
         String detail = "Método '" + ex.getMethod() + "' no soportado para esta ruta";
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.METHOD_NOT_ALLOWED, detail);
+        pd.setType(URI.create("about:blank"));
+        return pd;
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ProblemDetail handleMissingParam(MissingServletRequestParameterException ex) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
+                "Parámetro requerido ausente: " + ex.getParameterName());
         pd.setType(URI.create("about:blank"));
         return pd;
     }

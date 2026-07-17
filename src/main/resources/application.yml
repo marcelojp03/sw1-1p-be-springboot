@@ -48,7 +48,7 @@ app:
 onlyoffice:
   url: ${ONLYOFFICE_URL:http://localhost:8083}
   jwt-secret: ${ONLYOFFICE_JWT_SECRET:onlyoffice-secret-key}
-  callback-base-url: ${ONLYOFFICE_CALLBACK_BASE_URL:http://host.docker.internal:8080}
+  callback-base-url: "${ONLYOFFICE_CALLBACK_BASE_URL:http://host.docker.internal:${SERVER_PORT:8080}}"
 
 dynamodb:
   table-prefix: ${DYNAMODB_TABLE_PREFIX:sw1}

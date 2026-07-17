@@ -46,6 +46,13 @@ public class DocumentController {
         return ResponseEntity.ok(documentService.listByScope(scopeReferenceId));
     }
 
+    /** Listar todos los documentos de una organización */
+    @GetMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'OFFICER')")
+    public ResponseEntity<List<DocumentResponse>> listByOrganization(@RequestParam String organizationId) {
+        return ResponseEntity.ok(documentService.listByOrganization(organizationId));
+    }
+
     @PatchMapping("/{id}/status")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<DocumentResponse> updateStatus(
@@ -81,13 +88,12 @@ public class DocumentController {
         return ResponseEntity.ok(documentService.listVersions(id));
     }
 
+    /** OnlyOffice descarga el archivo a traves de Spring Boot (autenticado via token JWT en la config) */
     @GetMapping("/{id}/versions/{versionId}/download")
-    @PreAuthorize("hasAnyRole('ADMIN', 'OFFICER')")
-    public ResponseEntity<Map<String, String>> getDownloadUrl(
+    public ResponseEntity<org.springframework.core.io.Resource> downloadFile(
             @PathVariable String id,
             @PathVariable String versionId) {
-        String url = documentService.getDownloadUrl(id, versionId);
-        return ResponseEntity.ok(Map.of("url", url));
+        return documentService.downloadFile(id, versionId);
     }
 
     // ── OnlyOffice ─────────────────────────────────────────────────────────────

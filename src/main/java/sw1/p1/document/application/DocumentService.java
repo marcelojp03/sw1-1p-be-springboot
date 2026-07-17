@@ -5,6 +5,12 @@ import io.jsonwebtoken.security.Keys;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -20,6 +26,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @Service
@@ -76,6 +84,11 @@ public class DocumentService {
 
     public List<DocumentResponse> listByScope(String scopeReferenceId) {
         return documentRepository.findByScopeReferenceId(scopeReferenceId)
+                .stream().map(this::toResponse).toList();
+    }
+
+    public List<DocumentResponse> listByOrganization(String organizationId) {
+        return documentRepository.findByOrganizationId(organizationId, Pageable.unpaged())
                 .stream().map(this::toResponse).toList();
     }
 
@@ -157,15 +170,21 @@ public class DocumentService {
                 .toList();
     }
 
-    public String getDownloadUrl(String documentId, String versionId) {
+    public ResponseEntity<Resource> downloadFile(String documentId, String versionId) {
         DocumentVersion version = versionRepository.findById(versionId)
                 .orElseThrow(() -> new NotFoundException("Versión no encontrada: " + versionId));
         if (!version.getDocumentId().equals(documentId)) {
             throw new BusinessException("La versión no pertenece al documento indicado");
         }
-        String url = storageService.generatePresignedUrl(version.getStorageKey(), Duration.ofMinutes(30));
+        byte[] content = storageService.download(version.getStorageKey());
         auditService.log(documentId, versionId, AuditAction.DOWNLOADED, currentUsername(), null);
-        return url;
+
+        ByteArrayResource resource = new ByteArrayResource(content);
+        String encodedFilename = URLEncoder.encode(version.getFileName(), StandardCharsets.UTF_8).replace("+", "%20");
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(version.getMimeType() != null ? version.getMimeType() : "application/octet-stream"))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename*=UTF-8''" + encodedFilename)
+                .body(resource);
     }
 
     // ── OnlyOffice ─────────────────────────────────────────────────────────────
@@ -180,8 +199,9 @@ public class DocumentService {
                 .orElseThrow(() -> new NotFoundException("Versión no encontrada: " + versionId));
 
         String username = currentUsername();
-        String downloadUrl = storageService.generatePresignedUrl(version.getStorageKey(), Duration.ofHours(1));
+        // Usar URL local para que OnlyOffice (Docker) pueda descargar via host.docker.internal
         String callbackUrl = onlyofficeCallbackBaseUrl + "/api/documents/" + documentId + "/onlyoffice/callback";
+        String downloadUrl = onlyofficeCallbackBaseUrl + "/api/documents/" + documentId + "/versions/" + versionId + "/download";
 
         // Clave única de sesión de edición (OnlyOffice requiere cambiarla en cada nueva sesión)
         String editKey = documentId + "_v" + version.getVersionNumber() + "_" + System.currentTimeMillis();
@@ -192,13 +212,18 @@ public class DocumentService {
         documentConfig.put("title", version.getFileName());
         documentConfig.put("url", downloadUrl);
 
+        String fileType = getExtension(version.getFileName());
+        String documentType = resolveDocumentType(fileType);
+
         Map<String, Object> userConfig = Map.of("id", username, "name", username);
         Map<String, Object> editorConfig = new LinkedHashMap<>();
         editorConfig.put("callbackUrl", callbackUrl);
         editorConfig.put("user", userConfig);
+        editorConfig.put("customization", Map.of("forcesave", true));
 
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("document", documentConfig);
+        payload.put("documentType", documentType);
         payload.put("editorConfig", editorConfig);
 
         SecretKey secretKey = Keys.hmacShaKeyFor(onlyofficeJwtSecret.getBytes(StandardCharsets.UTF_8));
@@ -209,9 +234,6 @@ public class DocumentService {
 
         auditService.log(documentId, versionId, AuditAction.EDIT_STARTED, username, null);
         broadcastActivity(documentId, username, "EDIT_STARTED");
-
-        String fileType = getExtension(version.getFileName());
-        String documentType = resolveDocumentType(fileType);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("token", token);
@@ -228,38 +250,59 @@ public class DocumentService {
 
     /**
      * Callback que OnlyOffice llama cuando el usuario guarda el documento.
-     * status=2 → documento listo para descargar.
+     * status=2 -> documento listo al cerrar la sesion.
+     * status=6 -> force-save, por ejemplo al presionar Guardar.
      */
     public void onlyOfficeCallback(String documentId, Map<String, Object> payload) {
-        int status = ((Number) payload.get("status")).intValue();
-        // status 2 = guardado listo; 4 = sin cambios; otros = en proceso o error
-        if (status != 2) return;
+        Object rawStatus = payload.get("status");
+        if (!(rawStatus instanceof Number)) return;
+
+        int status = ((Number) rawStatus).intValue();
+        if (status == 7) {
+            log.warn("OnlyOffice force-save fallo para documento {}: {}", documentId, payload);
+            return;
+        }
+        if (status != 2 && status != 6) return;
 
         String downloadUrlFromOO = (String) payload.get("url");
         if (downloadUrlFromOO == null || downloadUrlFromOO.isBlank()) return;
 
         Document doc = findOrThrow(documentId);
         String username = "onlyoffice-callback";
+        DocumentVersion sourceVersion = findCurrentVersion(doc).orElse(null);
 
         // Descargar el contenido editado desde la URL temporal que provee OnlyOffice
         byte[] content = downloadBytesFromUrl(downloadUrlFromOO);
+        String checksum = computeChecksum(content);
+
+        if (sourceVersion != null && checksum != null && checksum.equals(sourceVersion.getChecksum())) {
+            log.info("OnlyOffice callback sin cambios nuevos para documento {}", documentId);
+            return;
+        }
 
         int nextVersion = versionRepository.countByDocumentId(documentId) + 1;
-        String storageKey = buildStorageKey(doc.getOrganizationId(), documentId, nextVersion, "document.docx");
-        storageService.uploadBytes(content, storageKey, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+        String fileName = sourceVersion != null && sourceVersion.getFileName() != null
+                ? sourceVersion.getFileName()
+                : "document.docx";
+        String mimeType = sourceVersion != null && sourceVersion.getMimeType() != null
+                ? sourceVersion.getMimeType()
+                : resolveMimeType(getExtension(fileName));
+        String storageKey = buildStorageKey(doc.getOrganizationId(), documentId, nextVersion, fileName);
+        storageService.uploadBytes(content, storageKey, mimeType);
 
         DocumentVersion newVersion = DocumentVersion.builder()
                 .documentId(documentId)
                 .versionNumber(nextVersion)
                 .versionType(VersionType.EDITABLE)
                 .storageKey(storageKey)
-                .fileName("document.docx")
-                .mimeType("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                .fileName(fileName)
+                .mimeType(mimeType)
                 .sizeBytes(content.length)
                 .uploadedBy(username)
                 .uploadedAt(Instant.now())
-                .changeReason("OnlyOffice autosave")
+                .changeReason(buildOnlyOfficeChangeReason(status, payload.get("forcesavetype")))
                 .status(DocumentStatus.ACTIVE)
+                .checksum(checksum)
                 .build();
 
         newVersion = versionRepository.save(newVersion);
@@ -278,6 +321,12 @@ public class DocumentService {
     private Document findOrThrow(String id) {
         return documentRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Documento no encontrado: " + id));
+    }
+
+    private Optional<DocumentVersion> findCurrentVersion(Document doc) {
+        String currentVersionId = doc.getCurrentVersionId();
+        if (currentVersionId == null || currentVersionId.isBlank()) return Optional.empty();
+        return versionRepository.findById(currentVersionId);
     }
 
     private String currentUsername() {
@@ -304,6 +353,20 @@ public class DocumentService {
         };
     }
 
+    private String resolveMimeType(String fileType) {
+        return switch (fileType) {
+            case "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            case "doc" -> "application/msword";
+            case "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+            case "xls" -> "application/vnd.ms-excel";
+            case "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+            case "ppt" -> "application/vnd.ms-powerpoint";
+            case "pdf" -> "application/pdf";
+            case "txt" -> "text/plain";
+            default -> "application/octet-stream";
+        };
+    }
+
     private String computeChecksumQuiet(MultipartFile file) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -315,6 +378,26 @@ public class DocumentService {
             log.warn("No se pudo calcular checksum: {}", e.getMessage());
             return null;
         }
+    }
+
+    private String computeChecksum(byte[] content) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(content);
+            StringBuilder hex = new StringBuilder();
+            for (byte b : hash) hex.append(String.format("%02x", b));
+            return hex.toString();
+        } catch (Exception e) {
+            log.warn("No se pudo calcular checksum de callback OnlyOffice: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private String buildOnlyOfficeChangeReason(int status, Object forceSaveType) {
+        if (status != 6) return "OnlyOffice autosave";
+        return forceSaveType == null
+                ? "OnlyOffice force-save"
+                : "OnlyOffice force-save type " + forceSaveType;
     }
 
     private byte[] downloadBytesFromUrl(String url) {

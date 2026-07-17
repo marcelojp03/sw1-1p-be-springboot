@@ -46,11 +46,19 @@ public class JwtTokenProvider {
     }
 
     public boolean validateToken(String token) {
+        return validateToken(token, null);
+    }
+
+    public boolean validateToken(String token, String requestLabel) {
         try {
             parseClaims(token);
             return true;
         } catch (JwtException | IllegalArgumentException e) {
-            log.warn("JWT inválido: {}", e.getMessage());
+            if (requestLabel == null || requestLabel.isBlank()) {
+                log.warn("JWT invalido: {}", e.getMessage());
+            } else {
+                log.warn("JWT invalido en {}: {}", requestLabel, e.getMessage());
+            }
             return false;
         }
     }

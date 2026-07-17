@@ -46,6 +46,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers("/api/auth/**").permitAll()
                 .requestMatchers("/ws/**").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/documents/*/onlyoffice/callback").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/documents/*/versions/*/download").permitAll()
                 .requestMatchers("/api/mobile/**").hasRole("CLIENT")
                 .anyRequest().authenticated()
             )

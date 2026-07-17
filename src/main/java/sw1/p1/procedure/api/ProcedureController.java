@@ -32,6 +32,17 @@ public class ProcedureController {
         return ResponseEntity.status(HttpStatus.CREATED).body(procedureService.start(request));
     }
 
+    @PostMapping("/from-version/{policyId}/{versionId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OFFICER')")
+    public ResponseEntity<ProcedureResponse> startFromVersion(
+            @PathVariable String policyId,
+            @PathVariable String versionId,
+            @RequestParam String organizationId,
+            @RequestParam(required = false) String clientId) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(procedureService.startFromVersion(policyId, versionId, clientId, organizationId));
+    }
+
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'OFFICER')")
     public ResponseEntity<Page<ProcedureSummaryResponse>> findByOrganization(

@@ -35,6 +35,9 @@ public class Procedure {
     @Indexed
     private String policyId;
 
+    /** ID de la PolicyVersion con la que se inició este trámite */
+    private String policyVersionId;
+
     private int policyVersion;
 
     @Indexed

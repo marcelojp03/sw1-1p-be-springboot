@@ -6,11 +6,13 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import sw1.p1.notification.dto.NotificationResponse;
 import sw1.p1.policy.dto.AvailablePolicyResponse;
 import sw1.p1.procedure.application.MobileProcedureService;
+import sw1.p1.procedure.application.ProcedureService;
 import sw1.p1.procedure.domain.ProcedureHistory;
 import sw1.p1.procedure.dto.ProcedureResponse;
 import sw1.p1.procedure.dto.ProcedureSummaryResponse;
@@ -28,6 +30,7 @@ import java.util.Map;
 public class MobileProcedureController {
 
     private final MobileProcedureService mobileService;
+    private final ProcedureService procedureService;
 
     // ── Políticas disponibles ──────────────────────────────────────────────────
 
@@ -68,6 +71,15 @@ public class MobileProcedureController {
     @ResponseStatus(HttpStatus.CREATED)
     public ProcedureResponse start(@Valid @RequestBody StartProcedureRequest request) {
         return mobileService.start(request);
+    }
+
+    /** Iniciar trámite desde una PolicyVersion publicada (CLIENT autenticado) */
+    @PostMapping("/procedures/from-version/{policyId}/{versionId}")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ProcedureResponse startFromVersion(@PathVariable String policyId,
+                                               @PathVariable String versionId,
+                                               Authentication authentication) {
+        return procedureService.startFromVersionForClient(policyId, versionId, authentication);
     }
 
     // ── Tareas ─────────────────────────────────────────────────────────────────
