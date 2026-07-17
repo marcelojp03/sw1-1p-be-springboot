@@ -31,4 +31,8 @@ public interface WorkflowPolicyRepository extends MongoRepository<WorkflowPolicy
     /** Políticas PUBLISHED que permiten un canal de inicio específico (ej. "MOBILE") */
     List<WorkflowPolicy> findByOrganizationIdAndStatusAndAllowedStartChannelsContaining(
             String organizationId, PolicyStatus status, String channel);
+
+    /** Políticas de una organización que permiten un canal, sin filtrar por estado */
+    List<WorkflowPolicy> findByOrganizationIdAndAllowedStartChannelsContaining(
+            String organizationId, String channel);
 }

@@ -173,15 +173,19 @@ public class MobileProcedureService {
     /** Políticas disponibles para iniciar trámites desde canal MOBILE */
     public List<AvailablePolicyResponse> availablePolicies(String organizationId) {
         return policyRepository
-                .findByOrganizationIdAndStatusAndAllowedStartChannelsContaining(
-                        organizationId, PolicyStatus.PUBLISHED, "MOBILE")
+                .findByOrganizationIdAndAllowedStartChannelsContaining(
+                        organizationId, "MOBILE")
                 .stream()
+                .filter(p -> versionRepository
+                        .findTopByPolicyIdAndStatusOrderByVersionNumberDesc(
+                                p.getId(), PolicyVersionStatus.PUBLISHED)
+                        .isPresent())
                 .map(p -> {
                     String pvId = versionRepository
                             .findTopByPolicyIdAndStatusOrderByVersionNumberDesc(
                                     p.getId(), PolicyVersionStatus.PUBLISHED)
                             .map(PolicyVersion::getId)
-                            .orElse(null);
+                            .orElseThrow(); // nunca debería llegar aquí por el filter
                     return new AvailablePolicyResponse(
                             p.getId(), p.getPolicyKey(), p.getName(),
                             p.getDescription(), pvId,
