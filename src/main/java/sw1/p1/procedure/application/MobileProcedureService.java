@@ -35,6 +35,7 @@ import sw1.p1.policy.dto.AvailablePolicyResponse;
 import sw1.p1.task.domain.Task;
 import sw1.p1.task.domain.TaskRepository;
 import sw1.p1.task.dto.CompleteTaskRequest;
+import sw1.p1.task.dto.MobileAttachmentResponse;
 import sw1.p1.task.dto.MobileTaskResponse;
 import sw1.p1.task.dto.TaskResponse;
 import org.springframework.web.multipart.MultipartFile;
@@ -415,26 +416,21 @@ public class MobileProcedureService {
     }
 
     private MobileTaskResponse toMobileTaskResponse(Task t) {
-        List<Map<String, Object>> attachmentMaps = List.of();
+        List<MobileAttachmentResponse> attachments = List.of();
         if (t.getAttachments() != null) {
-            attachmentMaps = t.getAttachments().stream().map(a -> {
-                Map<String, Object> m = new java.util.LinkedHashMap<>();
-                m.put("fileName", a.getFileName() != null ? a.getFileName() : "");
-                m.put("storageKey", a.getStorageKey() != null ? a.getStorageKey() : "");
-                if (a.getMimeType() != null) m.put("mimeType", a.getMimeType());
-                if (a.getSizeBytes() > 0) m.put("sizeBytes", a.getSizeBytes());
-                if (a.getUploadedAt() != null) m.put("uploadedAt", a.getUploadedAt().toString());
-                return m;
-            }).toList();
+            attachments = t.getAttachments().stream().map(a -> new MobileAttachmentResponse(
+                    a.getFileName(),
+                    a.getMimeType(),
+                    a.getSizeBytes() > 0 ? a.getSizeBytes() : null,
+                    a.getUploadedAt()
+            )).toList();
         }
         return new MobileTaskResponse(
                 t.getId(), t.getProcedureId(), t.getProcedureCode(),
-                t.getPolicyId(), null,
+                t.getPolicyId(), t.getPolicyVersionId(),
                 t.getNodeId(), t.getLabel(), t.getStatus(),
                 t.getCreatedAt(), t.getStartedAt(), t.getCompletedAt(), t.getDueAt(),
-                t.getForm() != null ? new java.util.LinkedHashMap<>() : null,
-                t.getFormResponse(),
-                attachmentMaps
+                t.getForm(), t.getFormResponse(), attachments
         );
     }
 

@@ -1,5 +1,6 @@
 package sw1.p1.task.dto;
 
+import sw1.p1.policy.domain.FormDefinition;
 import sw1.p1.shared.TaskStatus;
 
 import java.time.Instant;
@@ -19,7 +20,7 @@ public record MobileTaskResponse(
         Instant startedAt,
         Instant completedAt,
         Instant dueAt,
-        Map<String, Object> form,
+        FormDefinition form,
         Map<String, Object> formResponse,
-        List<Map<String, Object>> attachments
+        List<MobileAttachmentResponse> attachments
 ) {}

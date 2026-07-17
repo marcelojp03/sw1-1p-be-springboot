@@ -39,6 +39,9 @@ public class Task {
 
     private String policyId;
 
+    @Indexed
+    private String policyVersionId;
+
     private String nodeId;
 
     private String label;
