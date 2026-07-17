@@ -185,9 +185,12 @@ public class MobileProcedureService {
     public TaskResponse findTaskById(String taskId) {
         Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new NotFoundException("Tarea no encontrada: " + taskId));
+        if (task.getTaskAudience() != TaskAudience.CLIENT) {
+            throw new org.springframework.security.access.AccessDeniedException("Esta tarea no es de tipo CLIENT");
+        }
         String clientId = currentClientId();
         if (!clientId.equals(task.getAssignedClientId())) {
-            throw new BusinessException("No tiene permiso para ver esta tarea");
+            throw new org.springframework.security.access.AccessDeniedException("No tiene permiso para ver esta tarea");
         }
         return toTaskResponse(task);
     }
