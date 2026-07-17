@@ -90,6 +90,11 @@ public class MobileProcedureController {
         return mobileService.myTasks(pageable);
     }
 
+    @GetMapping("/tasks/{id}")
+    public TaskResponse getTask(@PathVariable String id) {
+        return mobileService.findTaskById(id);
+    }
+
     /** Completar una CLIENT_TASK */
     @PostMapping("/tasks/{id}/complete")
     public TaskResponse completeTask(@PathVariable String id,

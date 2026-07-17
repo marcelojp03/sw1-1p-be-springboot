@@ -78,7 +78,7 @@ public class AiController {
     // ──────── Ciclo 2 ────────
 
     @PostMapping("/identify-policy")
-    @PreAuthorize("hasAnyRole('ADMIN', 'OFFICER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OFFICER', 'CLIENT')")
     public IdentifyPolicyResponse identifyPolicy(
             @RequestBody IdentifyPolicyRequest request,
             @RequestParam String organizationId
@@ -87,7 +87,7 @@ public class AiController {
     }
 
     @PostMapping("/fill-form")
-    @PreAuthorize("hasAnyRole('ADMIN', 'OFFICER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'OFFICER', 'CLIENT')")
     public FillFormResponse fillForm(
             @RequestBody FillFormRequest request,
             @RequestParam String organizationId

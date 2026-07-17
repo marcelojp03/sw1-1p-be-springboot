@@ -182,6 +182,16 @@ public class MobileProcedureService {
                 .map(this::toTaskResponse);
     }
 
+    public TaskResponse findTaskById(String taskId) {
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new NotFoundException("Tarea no encontrada: " + taskId));
+        String clientId = currentClientId();
+        if (!clientId.equals(task.getAssignedClientId())) {
+            throw new BusinessException("No tiene permiso para ver esta tarea");
+        }
+        return toTaskResponse(task);
+    }
+
     public TaskResponse completeTask(String taskId, CompleteTaskRequest request) {
         Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new NotFoundException("Tarea no encontrada: " + taskId));
