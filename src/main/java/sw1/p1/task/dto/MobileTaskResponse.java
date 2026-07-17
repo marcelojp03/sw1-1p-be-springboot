@@ -18,5 +18,8 @@ public record MobileTaskResponse(
         Instant createdAt,
         Instant startedAt,
         Instant completedAt,
-        Instant dueAt
+        Instant dueAt,
+        Map<String, Object> form,
+        Map<String, Object> formResponse,
+        List<Map<String, Object>> attachments
 ) {}

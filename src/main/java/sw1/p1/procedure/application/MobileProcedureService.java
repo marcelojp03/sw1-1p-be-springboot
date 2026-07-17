@@ -221,7 +221,8 @@ public class MobileProcedureService {
                 .orElseThrow(() -> new BusinessException("El usuario no tiene un cliente asociado"));
     }
 
-    public Page<TaskResponse> myTasks(Pageable pageable) {        String clientId = currentClientId();
+    public Page<MobileTaskResponse> myTasks(Pageable pageable) {
+        String clientId = currentClientId();
         return taskRepository.findByAssignedClientIdAndTaskAudience(clientId, TaskAudience.CLIENT, pageable)
                 .map(this::toMobileTaskResponse);
     }
@@ -410,6 +411,27 @@ public class MobileProcedureService {
                 snap != null ? snap.getPolicyName() : null,
                 snap != null ? snap.getVersion() : 0,
                 p.getCreatedAt(), p.getUpdatedAt()
+        );
+    }
+
+    private MobileTaskResponse toMobileTaskResponse(Task t) {
+        List<Map<String, Object>> attachmentMaps = t.getAttachments() != null
+                ? t.getAttachments().stream().map(a -> {
+                    Map<String, Object> m = new java.util.LinkedHashMap<>();
+                    m.put("fileName", a.getFileName());
+                    m.put("storageKey", a.getStorageKey());
+                    m.put("mimeType", a.getMimeType());
+                    m.put("sizeBytes", a.getSizeBytes());
+                    m.put("uploadedAt", a.getUploadedAt());
+                    return m;
+                }).toList()
+                : List.of();
+        return new MobileTaskResponse(
+                t.getId(), t.getProcedureId(), t.getProcedureCode(),
+                t.getPolicyId(), null,
+                t.getNodeId(), t.getLabel(), t.getStatus(),
+                t.getCreatedAt(), t.getStartedAt(), t.getCompletedAt(), t.getDueAt(),
+                t.getForm(), t.getFormResponse(), attachmentMaps
         );
     }
 
