@@ -42,7 +42,7 @@ public class FormService {
     }
 
     public List<FormTemplateResponse> listTemplates(String organizationId) {
-        return templateRepository.findByOrganizationIdAndActiveTrue(organizationId)
+        return templateRepository.findByOrganizationIdOrderByUpdatedAtDesc(organizationId)
                 .stream().map(this::toResponse).toList();
     }
 

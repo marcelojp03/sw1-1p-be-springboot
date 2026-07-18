@@ -334,6 +334,18 @@ class FormServiceTest {
     }
 
     @Test
+    void listTemplatesIncludesInactive() {
+        FormTemplate active = template("t1");
+        FormTemplate inactive = FormTemplate.builder().id("t2").organizationId(ORG).code("F2").name("F2").active(false).build();
+        when(templateRepository.findByOrganizationIdOrderByUpdatedAtDesc(ORG))
+                .thenReturn(List.of(active, inactive));
+
+        var result = service.listTemplates(ORG);
+        assertThat(result).hasSize(2);
+        assertThat(result.get(1).active()).isFalse();
+    }
+
+    @Test
     void availableVersionsOnlyPublished() {
         FormVersion pub = FormVersion.builder().id("v2").organizationId(ORG)
                 .status(FormVersionStatus.PUBLISHED).build();

@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Optional;
 
 public interface FormTemplateRepository extends MongoRepository<FormTemplate, String> {
-    List<FormTemplate> findByOrganizationIdAndActiveTrue(String organizationId);
+    List<FormTemplate> findByOrganizationIdOrderByUpdatedAtDesc(String organizationId);
 
     Optional<FormTemplate> findByOrganizationIdAndCode(String organizationId, String code);
 }
