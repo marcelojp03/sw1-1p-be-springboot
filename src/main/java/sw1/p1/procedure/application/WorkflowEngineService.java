@@ -182,8 +182,10 @@ public class WorkflowEngineService {
             }
 
             case END -> {
+                var now = Instant.now();
                 procedure.setStatus(ProcedureStatus.COMPLETED);
-                procedure.setUpdatedAt(Instant.now());
+                procedure.setCompletedAt(now);
+                procedure.setUpdatedAt(now);
                 recordHistory(procedure.getId(), node, "PROCEDURE_COMPLETED", actorId, null, null);
                 procedureRepository.save(procedure);
                 log.info("Trámite {} completado", procedure.getId());

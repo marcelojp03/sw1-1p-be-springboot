@@ -195,5 +195,23 @@ class WorkflowEngineServiceTest {
 
         engine.advance(proc, "nB", "user-1", Map.of("f1", "ok"));
         assertThat(proc.getStatus()).isEqualTo(ProcedureStatus.COMPLETED);
+        assertThat(proc.getCompletedAt()).isNotNull();
+    }
+
+    @Test
+    void reachingEndEventSetsCompletedAt() {
+        var start = node("nStart", NodeType.START);
+        var end = node("nEnd", NodeType.END);
+
+        var proc = procedure("p4", List.of(start, end), List.of(
+                tr("t1", "nStart", "nEnd", null, null)));
+
+        when(taskRepository.save(any(Task.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(procedureRepository.save(any(Procedure.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        engine.start(proc, "user-1");
+
+        assertThat(proc.getStatus()).isEqualTo(ProcedureStatus.COMPLETED);
+        assertThat(proc.getCompletedAt()).isNotNull();
     }
 }
