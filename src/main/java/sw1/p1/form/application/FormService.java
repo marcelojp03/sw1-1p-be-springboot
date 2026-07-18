@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import sw1.p1.form.domain.*;
 import sw1.p1.form.dto.*;
 import sw1.p1.form.exception.FormTemplateNotFoundException;
+import sw1.p1.form.exception.FormStateConflictException;
 import sw1.p1.form.exception.FormValidationException;
 import sw1.p1.form.exception.FormVersionNotFoundException;
 
@@ -26,7 +27,7 @@ public class FormService {
                                                 String createdBy) {
         String code = normalizeCode(req.code());
         if (templateRepository.findByOrganizationIdAndCode(organizationId, code).isPresent()) {
-            throw new FormValidationException("El codigo '" + code + "' ya existe en tu organizacion");
+            throw new FormStateConflictException("El codigo '" + code + "' ya existe en tu organizacion");
         }
         FormTemplate template = FormTemplate.builder()
                 .organizationId(organizationId)
@@ -95,9 +96,9 @@ public class FormService {
                                               UpdateFormVersionRequest req) {
         FormVersion version = findVersionOrThrow(organizationId, versionId);
         if (version.getStatus() != FormVersionStatus.DRAFT) {
-            throw new FormValidationException("Solo se puede editar una version en estado DRAFT");
+            throw new FormStateConflictException("Solo se puede editar una version en estado DRAFT");
         }
-        version.setFields(req.fields());
+        version.setFields(req.fields() != null ? req.fields() : List.of());
         version.setUpdatedAt(Instant.now());
         version = versionRepository.save(version);
         return toResponse(version);
@@ -111,8 +112,9 @@ public class FormService {
 
     public FormVersionResponse publishVersion(String organizationId, String versionId) {
         FormVersion version = findVersionOrThrow(organizationId, versionId);
-        if (version.getStatus() == FormVersionStatus.PUBLISHED) {
-            throw new FormValidationException("La version ya esta publicada");
+        if (version.getStatus() != FormVersionStatus.DRAFT) {
+            throw new FormStateConflictException(
+                    "Solo se puede publicar una version en estado DRAFT. Estado actual: " + version.getStatus());
         }
         List<String> errors = validationService.collectErrors(version.getFields());
         if (!errors.isEmpty()) {

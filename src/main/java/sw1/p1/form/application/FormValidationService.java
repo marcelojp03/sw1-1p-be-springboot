@@ -2,7 +2,6 @@ package sw1.p1.form.application;
 
 import org.springframework.stereotype.Service;
 import sw1.p1.form.domain.*;
-import sw1.p1.form.exception.FormValidationException;
 
 import java.util.*;
 
@@ -20,7 +19,12 @@ public class FormValidationService {
         Set<String> keys = new HashSet<>();
         Set<String> ids = new HashSet<>();
 
-        for (FormFieldDefinition field : fields) {
+        for (int i = 0; i < fields.size(); i++) {
+            FormFieldDefinition field = fields.get(i);
+            if (field == null) {
+                errors.add("El campo en posicion " + i + " es nulo");
+                continue;
+            }
             if (field.getId() == null || field.getId().isBlank()) {
                 errors.add("Cada campo debe tener un id");
             }
@@ -56,21 +60,31 @@ public class FormValidationService {
             case SELECT, RADIO -> {
                 if (field.getOptions() == null || field.getOptions().isEmpty()) {
                     errors.add("El campo '" + key + "' de tipo " + type + " requiere opciones");
+                } else {
+                    validateOptions(field.getOptions(), key, errors);
                 }
-                validateOptions(field.getOptions(), key, errors);
             }
             case CHECKLIST -> {
                 if (field.getOptions() == null || field.getOptions().isEmpty()) {
                     errors.add("El campo '" + key + "' de tipo CHECKLIST requiere opciones");
+                } else {
+                    validateOptions(field.getOptions(), key, errors);
                 }
-                validateOptions(field.getOptions(), key, errors);
             }
             case GRID -> {
                 if (field.getColumns() == null || field.getColumns().isEmpty()) {
                     errors.add("El campo '" + key + "' de tipo GRID requiere columnas");
                 } else {
+                    Set<String> colIds = new HashSet<>();
                     Set<String> colKeys = new HashSet<>();
                     for (GridColumnDefinition col : field.getColumns()) {
+                        if (col == null) {
+                            errors.add("Columna nula en GRID '" + key + "'");
+                            continue;
+                        }
+                        if (col.getId() == null || col.getId().isBlank()) {
+                            errors.add("Columna sin id en GRID '" + key + "'");
+                        }
                         if (col.getKey() == null || col.getKey().isBlank()) {
                             errors.add("Columna sin key en GRID '" + key + "'");
                         }
@@ -80,14 +94,18 @@ public class FormValidationService {
                         if (col.getType() == null) {
                             errors.add("Columna '" + col.getKey() + "' sin tipo en GRID '" + key + "'");
                         }
+                        if (col.getId() != null && !colIds.add(col.getId())) {
+                            errors.add("Id de columna duplicado '" + col.getId() + "' en GRID '" + key + "'");
+                        }
                         if (col.getKey() != null && !colKeys.add(col.getKey())) {
                             errors.add("Columna duplicada '" + col.getKey() + "' en GRID '" + key + "'");
                         }
-                        if (col.getType() == GridColumnType.SELECT && (col.getOptions() == null || col.getOptions().isEmpty())) {
-                            errors.add("Columna SELECT '" + col.getKey() + "' requiere opciones");
-                        }
-                        if (col.getOptions() != null) {
-                            validateOptions(col.getOptions(), "columna " + col.getKey(), errors);
+                        if (col.getType() == GridColumnType.SELECT) {
+                            if (col.getOptions() == null || col.getOptions().isEmpty()) {
+                                errors.add("Columna SELECT '" + col.getKey() + "' requiere opciones en GRID '" + key + "'");
+                            } else {
+                                validateOptions(col.getOptions(), "columna " + col.getKey(), errors);
+                            }
                         }
                     }
                 }
@@ -121,8 +139,13 @@ public class FormValidationService {
     }
 
     private void validateOptions(List<FormOption> options, String context, List<String> errors) {
+        if (options == null) return;
         Set<String> values = new HashSet<>();
         for (var opt : options) {
+            if (opt == null) {
+                errors.add("Opcion nula en " + context);
+                continue;
+            }
             if (opt.getValue() == null || opt.getValue().isBlank()) {
                 errors.add("Opcion sin value en " + context);
             }

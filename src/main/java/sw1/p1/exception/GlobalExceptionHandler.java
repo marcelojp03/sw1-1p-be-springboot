@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 
+import sw1.p1.form.exception.FormStateConflictException;
 import sw1.p1.form.exception.FormTemplateNotFoundException;
 import sw1.p1.form.exception.FormValidationException;
 import sw1.p1.form.exception.FormVersionNotFoundException;
@@ -101,6 +102,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(FormVersionNotFoundException.class)
     public ProblemDetail handleFormVersionNotFound(FormVersionNotFoundException ex) {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        pd.setType(URI.create("about:blank"));
+        return pd;
+    }
+
+    @ExceptionHandler(FormStateConflictException.class)
+    public ProblemDetail handleFormStateConflict(FormStateConflictException ex) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
         pd.setType(URI.create("about:blank"));
         return pd;
     }

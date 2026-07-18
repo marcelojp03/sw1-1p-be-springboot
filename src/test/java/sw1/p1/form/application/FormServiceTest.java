@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import sw1.p1.form.domain.*;
 import sw1.p1.form.dto.*;
+import sw1.p1.form.exception.FormStateConflictException;
 import sw1.p1.form.exception.FormTemplateNotFoundException;
 import sw1.p1.form.exception.FormValidationException;
 import sw1.p1.form.exception.FormVersionNotFoundException;
@@ -72,7 +73,7 @@ class FormServiceTest {
 
         assertThatThrownBy(() ->
                 service.createTemplate(ORG, new CreateFormTemplateRequest("form_x", "X", null), "admin"))
-                .isInstanceOf(FormValidationException.class)
+                .isInstanceOf(FormStateConflictException.class)
                 .hasMessageContaining("ya existe");
     }
 
@@ -158,7 +159,7 @@ class FormServiceTest {
 
         assertThatThrownBy(() ->
                 service.updateVersion(ORG, "v1", new UpdateFormVersionRequest(List.of(textField("x")))))
-                .isInstanceOf(FormValidationException.class)
+                .isInstanceOf(FormStateConflictException.class)
                 .hasMessageContaining("DRAFT");
     }
 
@@ -195,8 +196,8 @@ class FormServiceTest {
         when(versionRepository.findById("v1")).thenReturn(Optional.of(v));
 
         assertThatThrownBy(() -> service.publishVersion(ORG, "v1"))
-                .isInstanceOf(FormValidationException.class)
-                .hasMessageContaining("ya esta publicada");
+                .isInstanceOf(FormStateConflictException.class)
+                .hasMessageContaining("DRAFT");
     }
 
     @Test
@@ -291,15 +292,42 @@ class FormServiceTest {
     }
 
     @Test
+    void acceptNullOptions() {
+        var errors = validationService.collectErrors(List.of(
+                FormFieldDefinition.builder().id("f1").key("sel").label("S").type(FormFieldType.SELECT)
+                        .options(null).build()));
+        assertThat(errors.stream().anyMatch(e -> e.contains("requiere opciones"))).isTrue();
+    }
+
+    @Test
+    void rejectGridColumnWithoutId() {
+        var errors = validationService.collectErrors(List.of(
+                FormFieldDefinition.builder().id("f1").key("grid").label("G").type(FormFieldType.GRID)
+                        .columns(List.of(
+                                GridColumnDefinition.builder().key("c1").label("C1").type(GridColumnType.TEXT).build()))
+                        .build()));
+        assertThat(errors.stream().anyMatch(e -> e.contains("sin id"))).isTrue();
+    }
+
+    @Test
+    void rejectNullFieldInList() {
+        var fields = new java.util.ArrayList<FormFieldDefinition>();
+        fields.add(textField("ok"));
+        fields.add(null);
+        var errors = validationService.collectErrors(fields);
+        assertThat(errors.stream().anyMatch(e -> e.contains("nulo"))).isTrue();
+    }
+
+    @Test
     void acceptValidComplexForm() {
         var errors = validationService.collectErrors(List.of(
                 textField("nombre"),
                 FormFieldDefinition.builder().id("f2").key("tipo").label("Tipo").type(FormFieldType.SELECT)
                         .options(List.of(new FormOption("A", "Opcion A"), new FormOption("B", "Opcion B")))
                         .required(true).build(),
-                FormFieldDefinition.builder().id("f3").key("grid").label("G").type(FormFieldType.GRID)
+                FormFieldDefinition.builder().id("f3").key("grid").label("Grilla").type(FormFieldType.GRID)
                         .columns(List.of(
-                                GridColumnDefinition.builder().key("col1").label("C1").type(GridColumnType.TEXT).build()))
+                                GridColumnDefinition.builder().id("gc1").key("col1").label("C1").type(GridColumnType.TEXT).build()))
                         .build()
         ));
         assertThat(errors).isEmpty();
