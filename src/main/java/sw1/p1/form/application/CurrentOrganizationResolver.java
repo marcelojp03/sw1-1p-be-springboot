@@ -1,6 +1,7 @@
 package sw1.p1.form.application;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import sw1.p1.auth.domain.UserRepository;
@@ -13,8 +14,11 @@ public class CurrentOrganizationResolver {
     private final UserRepository userRepository;
 
     public String requireOrganizationId() {
-        String email = SecurityContextHolder.getContext().getAuthentication().getName();
-        var user = userRepository.findByEmail(email)
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth.getName() == null) {
+            throw new BusinessException("No existe un usuario autenticado");
+        }
+        var user = userRepository.findByEmail(auth.getName())
                 .orElseThrow(() -> new BusinessException("Usuario autenticado no encontrado"));
         String orgId = user.getOrganizationId();
         if (orgId == null || orgId.isBlank()) {
@@ -24,6 +28,10 @@ public class CurrentOrganizationResolver {
     }
 
     public String requireEmail() {
-        return SecurityContextHolder.getContext().getAuthentication().getName();
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth.getName() == null) {
+            throw new BusinessException("No existe un usuario autenticado");
+        }
+        return auth.getName();
     }
 }
