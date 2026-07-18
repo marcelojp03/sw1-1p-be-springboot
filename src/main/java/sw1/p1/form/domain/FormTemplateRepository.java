@@ -9,6 +9,4 @@ public interface FormTemplateRepository extends MongoRepository<FormTemplate, St
     List<FormTemplate> findByOrganizationIdAndActiveTrue(String organizationId);
 
     Optional<FormTemplate> findByOrganizationIdAndCode(String organizationId, String code);
-
-    boolean existsByOrganizationIdAndCodeAndIdNot(String organizationId, String code, String id);
 }

@@ -14,6 +14,10 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 
+import sw1.p1.form.exception.FormTemplateNotFoundException;
+import sw1.p1.form.exception.FormValidationException;
+import sw1.p1.form.exception.FormVersionNotFoundException;
+
 import java.net.URI;
 import java.util.stream.Collectors;
 
@@ -83,6 +87,27 @@ public class GlobalExceptionHandler {
     public ProblemDetail handleMissingParam(MissingServletRequestParameterException ex) {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
                 "Parámetro requerido ausente: " + ex.getParameterName());
+        pd.setType(URI.create("about:blank"));
+        return pd;
+    }
+
+    @ExceptionHandler(FormTemplateNotFoundException.class)
+    public ProblemDetail handleFormTemplateNotFound(FormTemplateNotFoundException ex) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        pd.setType(URI.create("about:blank"));
+        return pd;
+    }
+
+    @ExceptionHandler(FormVersionNotFoundException.class)
+    public ProblemDetail handleFormVersionNotFound(FormVersionNotFoundException ex) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        pd.setType(URI.create("about:blank"));
+        return pd;
+    }
+
+    @ExceptionHandler(FormValidationException.class)
+    public ProblemDetail handleFormValidation(FormValidationException ex) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
         pd.setType(URI.create("about:blank"));
         return pd;
     }

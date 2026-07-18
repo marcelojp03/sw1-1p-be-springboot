@@ -21,10 +21,8 @@ public class FormFieldDefinition {
     private String placeholder;
     private boolean required;
     private boolean readOnly;
-    private Integer order;
 
     private Object defaultValue;
-
     @Builder.Default
     private FieldValidation validation = new FieldValidation();
 

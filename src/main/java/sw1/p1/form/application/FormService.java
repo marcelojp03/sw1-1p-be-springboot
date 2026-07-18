@@ -10,6 +10,7 @@ import sw1.p1.form.exception.FormVersionNotFoundException;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -23,12 +24,13 @@ public class FormService {
 
     public FormTemplateResponse createTemplate(String organizationId, CreateFormTemplateRequest req,
                                                 String createdBy) {
-        if (templateRepository.findByOrganizationIdAndCode(organizationId, req.code()).isPresent()) {
-            throw new FormValidationException("El codigo '" + req.code() + "' ya existe en tu organizacion");
+        String code = normalizeCode(req.code());
+        if (templateRepository.findByOrganizationIdAndCode(organizationId, code).isPresent()) {
+            throw new FormValidationException("El codigo '" + code + "' ya existe en tu organizacion");
         }
         FormTemplate template = FormTemplate.builder()
                 .organizationId(organizationId)
-                .code(req.code().trim())
+                .code(code)
                 .name(req.name().trim())
                 .description(req.description())
                 .active(true)
@@ -44,19 +46,12 @@ public class FormService {
     }
 
     public FormTemplateResponse getTemplate(String organizationId, String templateId) {
-        FormTemplate t = findTemplateOrThrow(organizationId, templateId);
-        return toResponse(t);
+        return toResponse(findTemplateOrThrow(organizationId, templateId));
     }
 
     public FormTemplateResponse updateTemplate(String organizationId, String templateId,
                                                 UpdateFormTemplateRequest req) {
         FormTemplate t = findTemplateOrThrow(organizationId, templateId);
-
-        if (templateRepository.existsByOrganizationIdAndCodeAndIdNot(
-                organizationId, req.name().trim(), templateId)) {
-            throw new FormValidationException("El codigo ya esta en uso");
-        }
-
         t.setName(req.name().trim());
         t.setDescription(req.description());
         t.setActive(req.active());
@@ -70,7 +65,6 @@ public class FormService {
     public FormVersionResponse createVersion(String organizationId, String templateId,
                                               CreateFormVersionRequest req, String createdBy) {
         FormTemplate template = findTemplateOrThrow(organizationId, templateId);
-        validationService.validate(req.fields());
 
         List<FormVersion> existing = versionRepository.findByFormTemplateIdOrderByVersionNumberDesc(templateId);
         int nextNumber = existing.isEmpty() ? 1 : existing.get(0).getVersionNumber() + 1;
@@ -80,7 +74,7 @@ public class FormService {
                 .organizationId(organizationId)
                 .versionNumber(nextNumber)
                 .status(FormVersionStatus.DRAFT)
-                .fields(req.fields())
+                .fields(req.fields() != null ? req.fields() : List.of())
                 .createdBy(createdBy)
                 .build();
         version = versionRepository.save(version);
@@ -103,7 +97,6 @@ public class FormService {
         if (version.getStatus() != FormVersionStatus.DRAFT) {
             throw new FormValidationException("Solo se puede editar una version en estado DRAFT");
         }
-        validationService.validate(req.fields());
         version.setFields(req.fields());
         version.setUpdatedAt(Instant.now());
         version = versionRepository.save(version);
@@ -112,12 +105,8 @@ public class FormService {
 
     public ValidationResult validateVersion(String organizationId, String versionId) {
         FormVersion version = findVersionOrThrow(organizationId, versionId);
-        try {
-            validationService.validate(version.getFields());
-            return new ValidationResult(true, List.of());
-        } catch (FormValidationException e) {
-            return new ValidationResult(false, List.of(e.getMessage()));
-        }
+        List<String> errors = validationService.collectErrors(version.getFields());
+        return new ValidationResult(errors.isEmpty(), errors);
     }
 
     public FormVersionResponse publishVersion(String organizationId, String versionId) {
@@ -125,7 +114,10 @@ public class FormService {
         if (version.getStatus() == FormVersionStatus.PUBLISHED) {
             throw new FormValidationException("La version ya esta publicada");
         }
-        validationService.validate(version.getFields());
+        List<String> errors = validationService.collectErrors(version.getFields());
+        if (!errors.isEmpty()) {
+            throw new FormValidationException(String.join("; ", errors));
+        }
 
         version.setStatus(FormVersionStatus.PUBLISHED);
         version.setPublishedAt(Instant.now());
@@ -140,6 +132,10 @@ public class FormService {
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────
+
+    private String normalizeCode(String code) {
+        return code.trim().toUpperCase(Locale.ROOT);
+    }
 
     private FormTemplate findTemplateOrThrow(String organizationId, String templateId) {
         FormTemplate t = templateRepository.findById(templateId)
