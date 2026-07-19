@@ -4,6 +4,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.w3c.dom.*;
 import org.xml.sax.InputSource;
+import org.xml.sax.SAXException;
+import org.xml.sax.SAXParseException;
+import org.xml.sax.helpers.DefaultHandler;
 import sw1.p1.policy.domain.NodeConfiguration;
 import sw1.p1.policy.domain.NodeConfigurationRepository;
 import sw1.p1.policy.domain.WorkflowPolicyRepository;
@@ -17,6 +20,8 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class BpmnValidationService {
+
+    private static final String BPMN_NAMESPACE = "http://www.omg.org/spec/BPMN/20100524/MODEL";
 
     private static final Set<String> SUPPORTED_ELEMENTS = Set.of(
             "bpmn:startEvent", "bpmn:endEvent",
@@ -42,13 +47,7 @@ public class BpmnValidationService {
 
         Document doc;
         try {
-            var factory = DocumentBuilderFactory.newInstance();
-            factory.setNamespaceAware(true);
-            // Security: disable XXE
-            factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            doc = factory.newDocumentBuilder()
-                    .parse(new InputSource(new StringReader(bpmnXml)));
+            doc = parseDocument(bpmnXml);
         } catch (Exception e) {
             violations.add(new Violation("BPMN_PARSE_ERROR", null,
                     "El XML no es válido: " + e.getMessage()));
@@ -252,6 +251,53 @@ public class BpmnValidationService {
         }
 
         return new ValidationResult(violations.isEmpty(), violations);
+    }
+
+    public boolean isUserTask(String bpmnXml, String elementId) {
+        if (bpmnXml == null || bpmnXml.isBlank() || elementId == null || elementId.isBlank()) {
+            return false;
+        }
+        try {
+            Document document = parseDocument(bpmnXml);
+            NodeList processes = document.getElementsByTagNameNS(BPMN_NAMESPACE, "process");
+            Element executableProcess = null;
+            for (int i = 0; i < processes.getLength(); i++) {
+                Element process = (Element) processes.item(i);
+                if (!"true".equalsIgnoreCase(process.getAttribute("isExecutable"))) continue;
+                if (executableProcess != null) return false;
+                executableProcess = process;
+            }
+            if (executableProcess == null) return false;
+
+            NodeList userTasks = executableProcess.getElementsByTagNameNS(BPMN_NAMESPACE, "userTask");
+            for (int i = 0; i < userTasks.getLength(); i++) {
+                Element element = (Element) userTasks.item(i);
+                if (elementId.equals(element.getAttribute("id"))) return true;
+            }
+            return false;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private Document parseDocument(String bpmnXml) throws Exception {
+        var factory = DocumentBuilderFactory.newInstance();
+        factory.setNamespaceAware(true);
+        factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+        var builder = factory.newDocumentBuilder();
+        builder.setErrorHandler(new DefaultHandler() {
+            @Override
+            public void error(SAXParseException exception) throws SAXException {
+                throw exception;
+            }
+
+            @Override
+            public void fatalError(SAXParseException exception) throws SAXException {
+                throw exception;
+            }
+        });
+        return builder.parse(new InputSource(new StringReader(bpmnXml)));
     }
 
     private void validateNodeConfig(NodeConfiguration config, String elementId,

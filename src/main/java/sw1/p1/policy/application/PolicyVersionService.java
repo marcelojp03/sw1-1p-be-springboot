@@ -5,9 +5,18 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import sw1.p1.exception.BusinessException;
+import sw1.p1.exception.ConflictException;
 import sw1.p1.exception.NotFoundException;
 import sw1.p1.exception.ValidationException;
+import sw1.p1.form.domain.FormTemplateRepository;
+import sw1.p1.form.domain.FormVersion;
+import sw1.p1.form.domain.FormVersionRepository;
+import sw1.p1.form.domain.FormVersionStatus;
+import sw1.p1.form.exception.FormVersionNotFoundException;
 import sw1.p1.policy.domain.*;
+import sw1.p1.policy.dto.NodeConfigurationMapper;
+import sw1.p1.policy.dto.NodeConfigurationRequest;
+import sw1.p1.policy.dto.NodeConfigurationResponse;
 import sw1.p1.shared.PolicyVersionStatus;
 
 import java.time.Instant;
@@ -23,6 +32,8 @@ public class PolicyVersionService {
     private final NodeConfigurationRepository nodeConfigRepository;
     private final WorkflowPolicyRepository policyRepository;
     private final BpmnValidationService validationService;
+    private final FormVersionRepository formVersionRepository;
+    private final FormTemplateRepository formTemplateRepository;
 
     @Transactional
     public PolicyVersion createDraft(String policyId, String createdBy) {
@@ -82,48 +93,89 @@ public class PolicyVersionService {
         return versionRepository.save(version);
     }
 
-    public List<NodeConfiguration> getNodeConfigurations(String policyId, String versionId) {
+    public List<NodeConfigurationResponse> getNodeConfigurations(String organizationId, String policyId,
+                                                                  String versionId) {
+        requirePolicyForOrganization(organizationId, policyId);
         getVersion(policyId, versionId);
-        return nodeConfigRepository.findByPolicyVersionId(versionId);
+        return nodeConfigRepository.findByPolicyVersionId(versionId).stream()
+                .map(NodeConfigurationMapper::toResponse)
+                .toList();
     }
 
-    public NodeConfiguration saveNodeConfiguration(String policyId, String versionId,
-                                                    NodeConfiguration config) {
+    public NodeConfigurationResponse saveNodeConfiguration(String organizationId, String policyId,
+                                                            String versionId, String elementId,
+                                                            NodeConfigurationRequest request) {
+        requirePolicyForOrganization(organizationId, policyId);
         PolicyVersion version = getVersion(policyId, versionId);
-        if (version.getStatus() != PolicyVersionStatus.DRAFT) {
-            throw new BusinessException("Solo se puede configurar una versión en estado DRAFT");
-        }
+        requireDraft(version);
+        validateSla(request.slaHours());
 
         NodeConfiguration existing = nodeConfigRepository
-                .findByPolicyVersionIdAndBpmnElementId(versionId, config.getBpmnElementId())
+                .findByPolicyVersionIdAndBpmnElementId(versionId, elementId)
                 .orElse(null);
-
         if (existing != null) {
-            existing.setTaskKind(coalesce(config.getTaskKind(), existing.getTaskKind()));
-            existing.setDepartmentId(coalesce(config.getDepartmentId(), existing.getDepartmentId()));
-            existing.setAssignmentMode(coalesce(config.getAssignmentMode(), existing.getAssignmentMode()));
-            existing.setSlaHours(config.getSlaHours() != null ? config.getSlaHours() : existing.getSlaHours());
-            existing.setLabel(coalesce(config.getLabel(), existing.getLabel()));
-            existing.setDescription(coalesce(config.getDescription(), existing.getDescription()));
-            return nodeConfigRepository.save(existing);
+            NodeConfigurationMapper.update(existing, request);
+            validateFormAssociation(organizationId, version, existing);
+            return NodeConfigurationMapper.toResponse(nodeConfigRepository.save(existing));
         }
 
-        config.setPolicyId(policyId);
-        config.setPolicyVersionId(versionId);
+        NodeConfiguration config = NodeConfigurationMapper.create(policyId, versionId, elementId, request);
+        validateFormAssociation(organizationId, version, config);
         if (config.getId() == null || config.getId().isBlank()) {
             config.setId(UUID.randomUUID().toString());
         }
-        return nodeConfigRepository.save(config);
+        return NodeConfigurationMapper.toResponse(nodeConfigRepository.save(config));
     }
 
-    private static String coalesce(String value, String fallback) {
-        return value != null && !value.isBlank() ? value : fallback;
-    }
-
-    public void deleteNodeConfiguration(String policyId, String versionId, String elementId) {
-        getVersion(policyId, versionId);
+    public void deleteNodeConfiguration(String organizationId, String policyId, String versionId,
+                                        String elementId) {
+        requirePolicyForOrganization(organizationId, policyId);
+        requireDraft(getVersion(policyId, versionId));
         nodeConfigRepository.findByPolicyVersionIdAndBpmnElementId(versionId, elementId)
                 .ifPresent(nodeConfigRepository::delete);
+    }
+
+    private void validateFormAssociation(String organizationId, PolicyVersion policyVersion,
+                                         NodeConfiguration config) {
+        String formVersionId = config.getFormVersionId();
+        if (formVersionId == null) return;
+
+        if (!validationService.isUserTask(policyVersion.getBpmnXml(), config.getBpmnElementId())) {
+            throw new BusinessException("formVersionId solo puede asociarse a un elemento BPMN UserTask");
+        }
+        if (!"CLIENT_TASK".equals(config.getTaskKind()) && !"OFFICER_TASK".equals(config.getTaskKind())) {
+            throw new BusinessException("formVersionId requiere taskKind CLIENT_TASK u OFFICER_TASK");
+        }
+
+        FormVersion formVersion = formVersionRepository.findById(formVersionId)
+                .filter(form -> organizationId.equals(form.getOrganizationId()))
+                .orElseThrow(() -> new FormVersionNotFoundException(
+                        "FormVersion no encontrada: " + formVersionId));
+        if (formVersion.getStatus() != FormVersionStatus.PUBLISHED) {
+            throw new BusinessException("La FormVersion asociada debe estar PUBLISHED");
+        }
+        formTemplateRepository.findById(formVersion.getFormTemplateId())
+                .filter(template -> organizationId.equals(template.getOrganizationId()))
+                .orElseThrow(() -> new FormVersionNotFoundException(
+                        "La plantilla de la FormVersion asociada no existe"));
+    }
+
+    private WorkflowPolicy requirePolicyForOrganization(String organizationId, String policyId) {
+        return policyRepository.findById(policyId)
+                .filter(policy -> organizationId.equals(policy.getOrganizationId()))
+                .orElseThrow(() -> new NotFoundException("Política no encontrada: " + policyId));
+    }
+
+    private void requireDraft(PolicyVersion version) {
+        if (version.getStatus() != PolicyVersionStatus.DRAFT) {
+            throw new ConflictException("Solo se puede configurar una versión en estado DRAFT");
+        }
+    }
+
+    private void validateSla(Integer slaHours) {
+        if (slaHours != null && slaHours <= 0) {
+            throw new BusinessException("slaHours debe ser mayor que cero");
+        }
     }
 
     @Transactional

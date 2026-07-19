@@ -7,16 +7,15 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import sw1.p1.policy.application.PolicyVersionService;
-import sw1.p1.policy.domain.NodeConfiguration;
 import sw1.p1.policy.domain.PolicyVersion;
+import sw1.p1.policy.dto.NodeConfigurationRequest;
+import sw1.p1.policy.dto.NodeConfigurationResponse;
 import sw1.p1.procedure.application.ProcedureService;
 import sw1.p1.procedure.dto.ProcedureResponse;
 import sw1.p1.procedure.dto.StartProcedureRequest;
+import sw1.p1.form.application.CurrentOrganizationResolver;
 
 import jakarta.validation.Valid;
-import sw1.p1.procedure.application.ProcedureService;
-import sw1.p1.procedure.dto.ProcedureResponse;
-import sw1.p1.procedure.dto.StartProcedureRequest;
 
 import java.util.List;
 import java.util.Map;
@@ -29,6 +28,7 @@ public class PolicyVersionController {
 
     private final PolicyVersionService versionService;
     private final ProcedureService procedureService;
+    private final CurrentOrganizationResolver organizationResolver;
 
     @PostMapping
     public ResponseEntity<PolicyVersion> createDraft(@PathVariable String policyId) {
@@ -60,25 +60,27 @@ public class PolicyVersionController {
     }
 
     @GetMapping("/{versionId}/nodes")
-    public ResponseEntity<List<NodeConfiguration>> getNodes(@PathVariable String policyId,
-                                                             @PathVariable String versionId) {
-        return ResponseEntity.ok(versionService.getNodeConfigurations(policyId, versionId));
+    public ResponseEntity<List<NodeConfigurationResponse>> getNodes(@PathVariable String policyId,
+                                                                     @PathVariable String versionId) {
+        return ResponseEntity.ok(versionService.getNodeConfigurations(
+                organizationResolver.requireOrganizationId(), policyId, versionId));
     }
 
     @PutMapping("/{versionId}/nodes/{elementId}")
-    public ResponseEntity<NodeConfiguration> saveNode(@PathVariable String policyId,
-                                                       @PathVariable String versionId,
-                                                       @PathVariable String elementId,
-                                                       @RequestBody NodeConfiguration config) {
-        config.setBpmnElementId(elementId);
-        return ResponseEntity.ok(versionService.saveNodeConfiguration(policyId, versionId, config));
+    public ResponseEntity<NodeConfigurationResponse> saveNode(@PathVariable String policyId,
+                                                               @PathVariable String versionId,
+                                                               @PathVariable String elementId,
+                                                               @Valid @RequestBody NodeConfigurationRequest request) {
+        return ResponseEntity.ok(versionService.saveNodeConfiguration(
+                organizationResolver.requireOrganizationId(), policyId, versionId, elementId, request));
     }
 
     @DeleteMapping("/{versionId}/nodes/{elementId}")
     public ResponseEntity<Void> deleteNode(@PathVariable String policyId,
                                             @PathVariable String versionId,
                                             @PathVariable String elementId) {
-        versionService.deleteNodeConfiguration(policyId, versionId, elementId);
+        versionService.deleteNodeConfiguration(
+                organizationResolver.requireOrganizationId(), policyId, versionId, elementId);
         return ResponseEntity.noContent().build();
     }
 

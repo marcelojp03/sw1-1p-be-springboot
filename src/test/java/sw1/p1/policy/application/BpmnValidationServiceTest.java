@@ -51,6 +51,44 @@ class BpmnValidationServiceTest {
     }
 
     @Test
+    void isUserTask_FindsExactElement() {
+        String xml = """
+                <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+                  <bpmn:process id="P1" isExecutable="true">
+                    <bpmn:userTask id="user-1"/>
+                    <bpmn:serviceTask id="service-1"/>
+                  </bpmn:process>
+                </bpmn:definitions>""";
+
+        assertTrue(svc.isUserTask(xml, "user-1"));
+        assertFalse(svc.isUserTask(xml, "service-1"));
+    }
+
+    @Test
+    void isUserTask_InvalidXmlReturnsFalse() {
+        assertFalse(svc.isUserTask("not xml", "user-1"));
+    }
+
+    @Test
+    void isUserTask_IgnoresNonExecutableAndForeignNamespaceElements() {
+        String xml = """
+                <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                                  xmlns:other="urn:other">
+                  <bpmn:process id="draft" isExecutable="false">
+                    <bpmn:userTask id="draft-user"/>
+                  </bpmn:process>
+                  <bpmn:process id="runtime" isExecutable="true">
+                    <other:userTask id="foreign-user"/>
+                    <bpmn:userTask id="runtime-user"/>
+                  </bpmn:process>
+                </bpmn:definitions>""";
+
+        assertFalse(svc.isUserTask(xml, "draft-user"));
+        assertFalse(svc.isUserTask(xml, "foreign-user"));
+        assertTrue(svc.isUserTask(xml, "runtime-user"));
+    }
+
+    @Test
     void missingStartEvent_ShouldFail() {
         var xml = """
             <?xml version="1.0"?>

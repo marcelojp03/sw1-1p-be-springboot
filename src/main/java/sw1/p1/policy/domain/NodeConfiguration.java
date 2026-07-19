@@ -34,7 +34,7 @@ public class NodeConfiguration {
 
     private String departmentId;
 
-    private String formTemplateVersionId;
+    private String formVersionId;
 
     private Integer slaHours;
 
