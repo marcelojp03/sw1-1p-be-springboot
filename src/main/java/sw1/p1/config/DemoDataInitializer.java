@@ -251,12 +251,12 @@ public class DemoDataInitializer implements ApplicationRunner {
         List<WorkflowNode> nodesCredito = List.of(
                 WorkflowNode.builder().nodeId("node-start").type(NodeType.START).label("Inicio").build(),
                 WorkflowNode.builder().nodeId("node-form1").type(NodeType.MANUAL_FORM)
-                        .label("Recepción de Solicitud").areaId(areaAtencionId).slaHours(24)
+                        .label("Recepción de Solicitud").departmentId(areaAtencionId).slaHours(24)
                         .form(formRecepcion).build(),
                 WorkflowNode.builder().nodeId("node-cond1").type(NodeType.CONDITION)
                         .label("Evaluar monto").build(),
                 WorkflowNode.builder().nodeId("node-form2").type(NodeType.MANUAL_FORM)
-                        .label("Análisis Crediticio").areaId(areaAnalisisId).slaHours(48)
+                        .label("Análisis Crediticio").departmentId(areaAnalisisId).slaHours(48)
                         .form(formAnalisis).build(),
                 WorkflowNode.builder().nodeId("node-end-ok").type(NodeType.END)
                         .label("Crédito Aprobado").build(),
@@ -340,12 +340,12 @@ public class DemoDataInitializer implements ApplicationRunner {
         List<WorkflowNode> nodesReclamo = List.of(
                 WorkflowNode.builder().nodeId("node-start").type(NodeType.START).label("Inicio").build(),
                 WorkflowNode.builder().nodeId("node-recepcion").type(NodeType.MANUAL_FORM)
-                        .label("Recepción del Reclamo").areaId(areaAtencionId).slaHours(8)
+                        .label("Recepción del Reclamo").departmentId(areaAtencionId).slaHours(8)
                         .form(formReclamo).build(),
                 WorkflowNode.builder().nodeId("node-cliente").type(NodeType.CLIENT_TASK)
                         .label("Adjuntar evidencia").build(),
                 WorkflowNode.builder().nodeId("node-revision").type(NodeType.MANUAL_FORM)
-                        .label("Revisión y Resolución").areaId(areaRevisionId).slaHours(72)
+                        .label("Revisión y Resolución").departmentId(areaRevisionId).slaHours(72)
                         .form(formResolucion).build(),
                 WorkflowNode.builder().nodeId("node-end").type(NodeType.END)
                         .label("Reclamo Resuelto").build()
@@ -448,8 +448,7 @@ public class DemoDataInitializer implements ApplicationRunner {
                 .eventType("NODE_STARTED").occurredAt(startedAt1.plus(2, ChronoUnit.HOURS)).build());
 
         // Tarea activa procedimiento 1
-        WorkflowNode nodeAnalisis = nodesCredito.stream()
-                .filter(n -> "node-form2".equals(n.getNodeId())).findFirst().orElseThrow();
+        Instant taskActivatedAt = Instant.now().minus(2, ChronoUnit.DAYS);
 
         taskRepository.save(Task.builder()
                 .procedureId(proc1Id)
@@ -458,12 +457,12 @@ public class DemoDataInitializer implements ApplicationRunner {
                 .nodeId("node-form2")
                 .label("Análisis Crediticio")
                 .organizationId(orgId)
-                .assignedAreaId(areaAnalisisId)
+                .assignedDepartmentId(areaAnalisisId)
                 .taskAudience(TaskAudience.INTERNAL)
                 .status(TaskStatus.PENDING)
-                .form(nodeAnalisis.getForm())
-                .createdAt(Instant.now().minus(2, ChronoUnit.DAYS))
-                .dueAt(Instant.now().plus(1, ChronoUnit.DAYS))
+                .createdAt(taskActivatedAt)
+                .dueAt(taskActivatedAt.plus(72, ChronoUnit.HOURS))
+                .updatedAt(taskActivatedAt)
                 .build());
 
         log.info("Procedimiento 1 creado: TRM-2026-0001");
@@ -584,10 +583,10 @@ public class DemoDataInitializer implements ApplicationRunner {
         List<WorkflowNode> nodesCredito = List.of(
                 WorkflowNode.builder().nodeId("node-start").type(NodeType.START).label("Inicio").build(),
                 WorkflowNode.builder().nodeId("node-form1").type(NodeType.MANUAL_FORM)
-                        .label("Recepción de Solicitud").areaId(atencionId).slaHours(24).form(formRecepcion).build(),
+                        .label("Recepción de Solicitud").departmentId(atencionId).slaHours(24).form(formRecepcion).build(),
                 WorkflowNode.builder().nodeId("node-cond1").type(NodeType.CONDITION).label("Evaluar monto").build(),
                 WorkflowNode.builder().nodeId("node-form2").type(NodeType.MANUAL_FORM)
-                        .label("Análisis Crediticio").areaId(analisisId).slaHours(48).form(formAnalisis).build(),
+                        .label("Análisis Crediticio").departmentId(analisisId).slaHours(48).form(formAnalisis).build(),
                 WorkflowNode.builder().nodeId("node-end-ok").type(NodeType.END).label("Crédito Aprobado").build(),
                 WorkflowNode.builder().nodeId("node-end-nok").type(NodeType.END).label("Crédito Rechazado").build()
         );
@@ -643,11 +642,11 @@ public class DemoDataInitializer implements ApplicationRunner {
         List<WorkflowNode> nodesReclamo = List.of(
                 WorkflowNode.builder().nodeId("node-start").type(NodeType.START).label("Inicio").build(),
                 WorkflowNode.builder().nodeId("node-recepcion").type(NodeType.MANUAL_FORM)
-                        .label("Recepción del Reclamo").areaId(atencionId).slaHours(8).form(formReclamo).build(),
+                        .label("Recepción del Reclamo").departmentId(atencionId).slaHours(8).form(formReclamo).build(),
                 WorkflowNode.builder().nodeId("node-cliente").type(NodeType.CLIENT_TASK)
                         .label("Adjuntar evidencia").build(),
                 WorkflowNode.builder().nodeId("node-revision").type(NodeType.MANUAL_FORM)
-                        .label("Revisión y Resolución").areaId(revisionId).slaHours(72).form(formResolucion).build(),
+                        .label("Revisión y Resolución").departmentId(revisionId).slaHours(72).form(formResolucion).build(),
                 WorkflowNode.builder().nodeId("node-end").type(NodeType.END).label("Reclamo Resuelto").build()
         );
 

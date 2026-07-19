@@ -34,9 +34,9 @@ public class TaskService {
     private final WorkflowEngineService workflowEngine;
     private final StorageService storageService;
 
-    /** Bandeja: tareas PENDING del área */
-    public Page<TaskResponse> findByArea(String areaId, Pageable pageable) {
-        return taskRepository.findByAssignedAreaIdAndStatus(areaId, TaskStatus.PENDING, pageable)
+    /** Bandeja: tareas PENDING del departamento. */
+    public Page<TaskResponse> findByDepartment(String departmentId, Pageable pageable) {
+        return taskRepository.findByAssignedDepartmentIdAndStatus(departmentId, TaskStatus.PENDING, pageable)
                 .map(this::toResponse);
     }
 
@@ -111,10 +111,10 @@ public class TaskService {
 
     private TaskResponse toResponse(Task t) {
         return new TaskResponse(
-                t.getId(), t.getProcedureId(), t.getProcedureCode(), t.getPolicyId(),
-                t.getNodeId(), t.getLabel(), t.getOrganizationId(), t.getAssignedAreaId(),
+                t.getId(), t.getProcedureId(), t.getProcedureCode(), t.getPolicyId(), t.getPolicyVersionId(),
+                t.getNodeId(), t.getLabel(), t.getOrganizationId(), t.getAssignedDepartmentId(),
                 t.getTaskAudience(), t.getStatus(), t.getAssignedUserId(), t.getAssignedClientId(),
-                t.getForm(), t.getFormResponse(), t.getNotes(), t.getCompletedBy(),
+                t.getFormVersionId(), t.getForm(), t.getFormResponse(), t.getNotes(), t.getCompletedBy(),
                 t.getAttachments(),
                 t.getCreatedAt(), t.getStartedAt(), t.getDueAt(), t.getCompletedAt()
         );

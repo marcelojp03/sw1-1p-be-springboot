@@ -99,6 +99,7 @@ class MobileProcedureServiceTest {
                 .policyId(policyId).policyVersionId(policyVersionId)
                 .nodeId(nodeId).label(label).status(status)
                 .taskAudience(audience).assignedClientId(assignedClientId)
+                .formVersionId("form-version-1")
                 .form(FormDefinition.builder().formId("f").fields(List.of()).build())
                 .formResponse(Map.of())
                 .createdAt(Instant.now()).updatedAt(Instant.now())
@@ -119,6 +120,7 @@ class MobileProcedureServiceTest {
         assertThat(r.id()).isEqualTo("t1");
         assertThat(r.label()).isEqualTo("completar solicitud");
         assertThat(r.policyVersionId()).isEqualTo("pv-1");
+        assertThat(r.formVersionId()).isEqualTo("form-version-1");
         assertThat(r.status()).isEqualTo(TaskStatus.PENDING);
         assertThat(r.form()).isNotNull();
     }
@@ -240,6 +242,7 @@ class MobileProcedureServiceTest {
                 .policyId("pol-1").policyVersionId("pv-1")
                 .nodeId("n1").label("x").status(TaskStatus.PENDING)
                 .taskAudience(TaskAudience.CLIENT).assignedClientId("client-1")
+                .formVersionId("form-v2")
                 .form(null)
                 .createdAt(Instant.now()).updatedAt(Instant.now())
                 .build();
@@ -248,6 +251,7 @@ class MobileProcedureServiceTest {
         MobileTaskResponse r = service.findTaskById("t1");
 
         assertThat(r.form()).isNull();
+        assertThat(r.formVersionId()).isEqualTo("form-v2");
     }
 
     @Test

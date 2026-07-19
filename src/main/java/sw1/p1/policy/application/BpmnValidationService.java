@@ -36,6 +36,7 @@ public class BpmnValidationService {
 
     private final NodeConfigurationRepository nodeConfigRepository;
     private final WorkflowPolicyRepository policyRepository;
+    private final NodeExecutionProfileResolver profileResolver;
 
     public ValidationResult validate(String policyId, String versionId, String bpmnXml) {
         List<Violation> violations = new ArrayList<>();
@@ -245,7 +246,7 @@ public class BpmnValidationService {
                     violations.add(new Violation("BPMN_MISSING_CONFIG", elementId,
                             "El elemento requiere NodeConfiguration pero no tiene ninguna."));
                 } else {
-                    validateNodeConfig(config, elementId, violations);
+                    validateNodeConfig(entry.getValue().getLocalName(), config, elementId, violations);
                 }
             }
         }
@@ -300,27 +301,12 @@ public class BpmnValidationService {
         return builder.parse(new InputSource(new StringReader(bpmnXml)));
     }
 
-    private void validateNodeConfig(NodeConfiguration config, String elementId,
-                                     List<Violation> violations) {
-        String taskKind = config.getTaskKind();
-        if (taskKind == null || taskKind.isBlank()) {
-            violations.add(new Violation("BPMN_CONFIG_NO_TASKKIND", elementId,
-                    "NodeConfiguration no tiene taskKind definido."));
-            return;
-        }
-
-        if ("OFFICER_TASK".equals(taskKind)) {
-            if (config.getDepartmentId() == null || config.getDepartmentId().isBlank()) {
-                violations.add(new Violation("BPMN_CONFIG_NO_DEPARTMENT", elementId,
-                        "OFFICER_TASK requiere departmentId."));
-            }
-        }
-
-        if ("CLIENT_TASK".equals(taskKind)) {
-            if (config.getDepartmentId() != null && !config.getDepartmentId().isBlank()) {
-                violations.add(new Violation("BPMN_CONFIG_CLIENT_NO_DEPT", elementId,
-                        "CLIENT_TASK no debe tener departmentId."));
-            }
+    private void validateNodeConfig(String elementType, NodeConfiguration config, String elementId,
+                                      List<Violation> violations) {
+        try {
+            profileResolver.resolve(elementType, config);
+        } catch (NodeExecutionProfileResolver.ResolutionException exception) {
+            violations.add(new Violation(exception.code(), elementId, exception.getMessage()));
         }
     }
 

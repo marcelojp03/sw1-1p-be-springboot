@@ -7,7 +7,7 @@ public record TaskOverdueResponse(
         String procedureId,
         String procedureCode,
         String nodeLabel,
-        String assignedAreaId,
+        String assignedDepartmentId,
         String assignedUserId,
         Instant dueAt,
         Instant createdAt,

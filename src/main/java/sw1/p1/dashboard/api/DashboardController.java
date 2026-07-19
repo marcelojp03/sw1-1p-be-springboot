@@ -44,11 +44,11 @@ public class DashboardController {
     @GetMapping("/tasks-overdue")
     public Page<TaskOverdueResponse> tasksOverdue(
             @RequestParam String organizationId,
-            @RequestParam(required = false) String areaId,
+            @RequestParam(required = false) String departmentId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
-        return dashboardService.getTasksOverdue(organizationId, areaId, page, size);
+        return dashboardService.getTasksOverdue(organizationId, departmentId, page, size);
     }
 
     @GetMapping("/average-time-by-node")

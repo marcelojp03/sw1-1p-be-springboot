@@ -430,16 +430,16 @@ public class MobileProcedureService {
                 t.getPolicyId(), t.getPolicyVersionId(),
                 t.getNodeId(), t.getLabel(), t.getStatus(),
                 t.getCreatedAt(), t.getStartedAt(), t.getCompletedAt(), t.getDueAt(),
-                t.getForm(), t.getFormResponse(), attachments
+                t.getFormVersionId(), t.getForm(), t.getFormResponse(), attachments
         );
     }
 
     private TaskResponse toTaskResponse(Task t) {
         return new TaskResponse(
-                t.getId(), t.getProcedureId(), t.getProcedureCode(), t.getPolicyId(),
-                t.getNodeId(), t.getLabel(), t.getOrganizationId(), t.getAssignedAreaId(),
+                t.getId(), t.getProcedureId(), t.getProcedureCode(), t.getPolicyId(), t.getPolicyVersionId(),
+                t.getNodeId(), t.getLabel(), t.getOrganizationId(), t.getAssignedDepartmentId(),
                 t.getTaskAudience(), t.getStatus(), t.getAssignedUserId(), t.getAssignedClientId(),
-                t.getForm(), t.getFormResponse(), t.getNotes(), t.getCompletedBy(),
+                t.getFormVersionId(), t.getForm(), t.getFormResponse(), t.getNotes(), t.getCompletedBy(),
                 t.getAttachments(),
                 t.getCreatedAt(), t.getStartedAt(), t.getDueAt(), t.getCompletedAt()
         );

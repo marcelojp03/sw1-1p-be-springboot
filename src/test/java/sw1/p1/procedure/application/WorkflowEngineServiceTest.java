@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.atLeastOnce;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -12,8 +13,11 @@ import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import sw1.p1.notification.application.NotificationService;
-import sw1.p1.policy.domain.FormField;
+import sw1.p1.policy.application.NodeExecutionProfileResolver;
+import sw1.p1.policy.domain.FormDefinition;
+import sw1.p1.policy.domain.WorkflowNode;
 import sw1.p1.procedure.domain.PolicySnapshot;
 import sw1.p1.procedure.domain.Procedure;
 import sw1.p1.procedure.domain.ProcedureHistoryRepository;
@@ -35,7 +39,8 @@ class WorkflowEngineServiceTest {
     @BeforeEach
     void setUp() {
         engine = new WorkflowEngineService(
-                procedureRepository, historyRepository, taskRepository, notificationService);
+                procedureRepository, historyRepository, taskRepository, notificationService,
+                new NodeExecutionProfileResolver());
     }
 
     private Procedure procedure(String id, List<sw1.p1.policy.domain.WorkflowNode> nodes,
@@ -48,6 +53,7 @@ class WorkflowEngineServiceTest {
                 .build();
         return Procedure.builder()
                 .id(id).organizationId("org-1").policyId("policy-1")
+                .policyVersionId("policy-v1").clientId("client-1")
                 .policySnapshot(snapshot)
                 .currentNodeIds(new ArrayList<>())
                 .status(ProcedureStatus.IN_PROGRESS)
@@ -62,12 +68,9 @@ class WorkflowEngineServiceTest {
     private sw1.p1.policy.domain.WorkflowNode manualNode(String id) {
         return sw1.p1.policy.domain.WorkflowNode.builder()
                 .nodeId(id).type(NodeType.MANUAL_FORM).label(id)
-                .areaId("area-1")
-                .form(sw1.p1.policy.domain.FormDefinition.builder()
-                        .formId("f" + id)
-                        .fields(List.of(FormField.builder()
-                                .fieldId("f1").type("TEXT").label("Field").build()))
-                        .build())
+                .departmentId("dep-1")
+                .formVersionId("form-" + id)
+                .slaHours(24)
                 .build();
     }
 
@@ -155,9 +158,10 @@ class WorkflowEngineServiceTest {
             return Task.builder().id(t.getNodeId() + "-task").nodeId(t.getNodeId())
                     .procedureId(t.getProcedureId()).procedureCode(t.getProcedureCode())
                     .policyId(t.getPolicyId()).organizationId(t.getOrganizationId())
-                    .assignedAreaId(t.getAssignedAreaId())
+                    .assignedDepartmentId(t.getAssignedDepartmentId())
                     .taskAudience(t.getTaskAudience()).status(t.getStatus())
-                    .form(t.getForm()).createdAt(Instant.now()).updatedAt(Instant.now())
+                    .formVersionId(t.getFormVersionId()).createdAt(t.getCreatedAt())
+                    .dueAt(t.getDueAt()).updatedAt(t.getUpdatedAt())
                     .build();
         });
         when(procedureRepository.save(any(Procedure.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -213,5 +217,106 @@ class WorkflowEngineServiceTest {
 
         assertThat(proc.getStatus()).isEqualTo(ProcedureStatus.COMPLETED);
         assertThat(proc.getCompletedAt()).isNotNull();
+    }
+
+    @Test
+    void manualFormTaskCopiesExactRuntimeMetadataAndSla() {
+        var taskNode = WorkflowNode.builder()
+                .nodeId("n1").type(NodeType.MANUAL_FORM).label("Revisar")
+                .departmentId("dep-7").formVersionId("form-v9").slaHours(12)
+                .build();
+        var proc = startTo(taskNode);
+        when(taskRepository.save(any(Task.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(procedureRepository.save(any(Procedure.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        engine.start(proc, "admin-1");
+
+        Task saved = capturedTask();
+        assertThat(saved.getAssignedDepartmentId()).isEqualTo("dep-7");
+        assertThat(saved.getFormVersionId()).isEqualTo("form-v9");
+        assertThat(saved.getForm()).isNull();
+        assertThat(saved.getDueAt()).isEqualTo(saved.getCreatedAt().plusSeconds(12 * 3600L));
+        assertThat(saved.getUpdatedAt()).isEqualTo(saved.getCreatedAt());
+    }
+
+    @Test
+    void manualActionTaskHasNoFormAndNullSlaHasNoDueAt() {
+        var taskNode = WorkflowNode.builder()
+                .nodeId("n1").type(NodeType.MANUAL_ACTION).label("Aprobar")
+                .departmentId("dep-7").build();
+        var proc = startTo(taskNode);
+        when(taskRepository.save(any(Task.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(procedureRepository.save(any(Procedure.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        engine.start(proc, "admin-1");
+
+        Task saved = capturedTask();
+        assertThat(saved.getFormVersionId()).isNull();
+        assertThat(saved.getForm()).isNull();
+        assertThat(saved.getDueAt()).isNull();
+    }
+
+    @Test
+    void clientTaskCopiesExactFormVersionWithoutDepartmentOrLegacyForm() {
+        var taskNode = WorkflowNode.builder()
+                .nodeId("n1").type(NodeType.CLIENT_TASK).label("Completar")
+                .formVersionId("form-client-v2").slaHours(6).build();
+        var proc = startTo(taskNode);
+        when(taskRepository.save(any(Task.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(procedureRepository.save(any(Procedure.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        engine.start(proc, "admin-1");
+
+        Task saved = capturedTask();
+        assertThat(saved.getAssignedClientId()).isEqualTo("client-1");
+        assertThat(saved.getAssignedDepartmentId()).isNull();
+        assertThat(saved.getFormVersionId()).isEqualTo("form-client-v2");
+        assertThat(saved.getForm()).isNull();
+        assertThat(saved.getDueAt()).isEqualTo(saved.getCreatedAt().plusSeconds(6 * 3600L));
+    }
+
+    @Test
+    void clientTaskWithoutFormKeepsNullReference() {
+        var taskNode = WorkflowNode.builder()
+                .nodeId("n1").type(NodeType.CLIENT_TASK).label("Confirmar").build();
+        var proc = startTo(taskNode);
+        when(taskRepository.save(any(Task.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(procedureRepository.save(any(Procedure.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        engine.start(proc, "admin-1");
+
+        Task saved = capturedTask();
+        assertThat(saved.getFormVersionId()).isNull();
+        assertThat(saved.getForm()).isNull();
+    }
+
+    @Test
+    void legacyUnversionedExecutionDoesNotWriteEmbeddedForm() {
+        var legacyForm = FormDefinition.builder().formId("legacy-form").fields(List.of()).build();
+        var taskNode = WorkflowNode.builder()
+                .nodeId("n1").type(NodeType.MANUAL_FORM).label("Legacy")
+                .departmentId("dep-1").form(legacyForm).build();
+        var proc = startTo(taskNode);
+        proc.setPolicyVersionId(null);
+        when(taskRepository.save(any(Task.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(procedureRepository.save(any(Procedure.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        engine.start(proc, "admin-1");
+
+        Task saved = capturedTask();
+        assertThat(saved.getFormVersionId()).isNull();
+        assertThat(saved.getForm()).isNull();
+    }
+
+    private Procedure startTo(WorkflowNode taskNode) {
+        var start = node("start", NodeType.START);
+        return procedure("runtime-proc", List.of(start, taskNode),
+                List.of(tr("flow", "start", taskNode.getNodeId(), null, null)));
+    }
+
+    private Task capturedTask() {
+        ArgumentCaptor<Task> captor = ArgumentCaptor.forClass(Task.class);
+        verify(taskRepository, atLeastOnce()).save(captor.capture());
+        return captor.getValue();
     }
 }

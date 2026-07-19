@@ -8,7 +8,7 @@ import lombok.NoArgsConstructor;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Swimlane (carril) del diagrama, agrupando nodos por área */
+/** Swimlane (carril) del diagrama, agrupando nodos por departamento. */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -17,7 +17,7 @@ public class Swimlane {
 
     private String laneId;
 
-    private String areaId;
+    private String departmentId;
 
     private String label;
 

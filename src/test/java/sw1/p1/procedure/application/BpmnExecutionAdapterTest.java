@@ -3,6 +3,7 @@ package sw1.p1.procedure.application;
 import org.junit.jupiter.api.Test;
 import sw1.p1.exception.BusinessException;
 import sw1.p1.policy.domain.NodeConfiguration;
+import sw1.p1.policy.application.NodeExecutionProfileResolver;
 import sw1.p1.policy.domain.PolicyVersion;
 import sw1.p1.shared.PolicyVersionStatus;
 
@@ -14,7 +15,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class BpmnExecutionAdapterTest {
 
-    private final BpmnExecutionAdapter adapter = new BpmnExecutionAdapter();
+    private final BpmnExecutionAdapter adapter =
+            new BpmnExecutionAdapter(new NodeExecutionProfileResolver());
 
     private final String VALID_BPMN = """
             <?xml version="1.0"?>
@@ -45,10 +47,27 @@ class BpmnExecutionAdapterTest {
     @Test
     void validClientTask_ShouldParse() {
         var v = makeVersion(VALID_BPMN);
-        var def = adapter.parse(v, List.of(config("u1", "CLIENT_TASK")));
+        var config = config("u1", "CLIENT_TASK");
+        config.setFormVersionId("form-v2");
+        config.setSlaHours(24);
+        var def = adapter.parse(v, List.of(config));
         assertEquals(3, def.nodes().size());
         assertEquals(2, def.transitions().size());
-        assertTrue(def.nodes().stream().anyMatch(n -> n.getType() == sw1.p1.shared.NodeType.CLIENT_TASK));
+        var node = def.nodes().stream().filter(n -> "u1".equals(n.getNodeId())).findFirst().orElseThrow();
+        assertEquals(sw1.p1.shared.NodeType.CLIENT_TASK, node.getType());
+        assertEquals("form-v2", node.getFormVersionId());
+        assertEquals(24, node.getSlaHours());
+        assertNull(node.getForm());
+    }
+
+    @Test
+    void clientTaskWithoutForm_ShouldKeepNullFormVersion() {
+        var node = adapter.parse(makeVersion(VALID_BPMN),
+                        List.of(config("u1", "CLIENT_TASK"))).nodes().stream()
+                .filter(n -> "u1".equals(n.getNodeId())).findFirst().orElseThrow();
+
+        assertEquals(sw1.p1.shared.NodeType.CLIENT_TASK, node.getType());
+        assertNull(node.getFormVersionId());
     }
 
     @Test
@@ -67,10 +86,41 @@ class BpmnExecutionAdapterTest {
     }
 
     @Test
-    void officerTask_ShouldThrow() {
+    void officerTaskWithForm_ShouldBecomeManualForm() {
         var v = makeVersion(VALID_BPMN);
+        var config = config("u1", "OFFICER_TASK");
+        config.setDepartmentId("dep-1");
+        config.setFormVersionId("form-v3");
+        config.setSlaHours(48);
+
+        var node = adapter.parse(v, List.of(config)).nodes().stream()
+                .filter(n -> "u1".equals(n.getNodeId())).findFirst().orElseThrow();
+
+        assertEquals(sw1.p1.shared.NodeType.MANUAL_FORM, node.getType());
+        assertEquals("dep-1", node.getDepartmentId());
+        assertEquals("form-v3", node.getFormVersionId());
+        assertEquals(48, node.getSlaHours());
+    }
+
+    @Test
+    void officerTaskWithoutForm_ShouldBecomeManualAction() {
+        var config = config("u1", "OFFICER_TASK");
+        config.setDepartmentId("dep-1");
+
+        var node = adapter.parse(makeVersion(VALID_BPMN), List.of(config)).nodes().stream()
+                .filter(n -> "u1".equals(n.getNodeId())).findFirst().orElseThrow();
+
+        assertEquals(sw1.p1.shared.NodeType.MANUAL_ACTION, node.getType());
+        assertNull(node.getFormVersionId());
+    }
+
+    @Test
+    void invalidConfiguration_DoesNotProducePartialDefinition() {
+        var config = config("u1", "OFFICER_TASK");
+        config.setFormVersionId("form-v3");
+
         assertThrows(BusinessException.class,
-                () -> adapter.parse(v, List.of(config("u1", "OFFICER_TASK"))));
+                () -> adapter.parse(makeVersion(VALID_BPMN), List.of(config)));
     }
 
     @Test

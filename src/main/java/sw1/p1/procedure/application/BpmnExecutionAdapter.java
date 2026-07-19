@@ -8,6 +8,7 @@ import sw1.p1.policy.domain.NodeConfiguration;
 import sw1.p1.policy.domain.PolicyVersion;
 import sw1.p1.policy.domain.WorkflowNode;
 import sw1.p1.policy.domain.WorkflowTransition;
+import sw1.p1.policy.application.NodeExecutionProfileResolver;
 import sw1.p1.shared.NodeType;
 import sw1.p1.shared.PolicyVersionStatus;
 
@@ -19,6 +20,12 @@ import java.util.*;
 @Component
 @Slf4j
 public class BpmnExecutionAdapter {
+
+    private final NodeExecutionProfileResolver profileResolver;
+
+    public BpmnExecutionAdapter(NodeExecutionProfileResolver profileResolver) {
+        this.profileResolver = profileResolver;
+    }
 
     public record BpmnProcessDefinition(
             List<WorkflowNode> nodes,
@@ -108,15 +115,11 @@ public class BpmnExecutionAdapter {
             String id = el.getAttribute("id");
             if (id.isEmpty()) continue;
 
-            NodeType type = mapToNodeType(localName, id, configMap);
-            if (type == null) continue;
+            WorkflowNode node = mapToWorkflowNode(localName, id, getName(el), configMap);
+            if (node == null) continue;
 
             nodeIds.add(id);
-            nodes.add(WorkflowNode.builder()
-                    .nodeId(id)
-                    .type(type)
-                    .label(getName(el))
-                    .build());
+            nodes.add(node);
         }
 
         var flows = process.getElementsByTagNameNS("*", "sequenceFlow");
@@ -140,23 +143,26 @@ public class BpmnExecutionAdapter {
         }
     }
 
-    private NodeType mapToNodeType(String localName, String elementId,
-                                    Map<String, NodeConfiguration> configMap) {
+    private WorkflowNode mapToWorkflowNode(String localName, String elementId, String name,
+                                           Map<String, NodeConfiguration> configMap) {
         return switch (localName) {
-            case "startEvent" -> NodeType.START;
-            case "endEvent" -> NodeType.END;
+            case "startEvent" -> basicNode(elementId, NodeType.START, name);
+            case "endEvent" -> basicNode(elementId, NodeType.END, name);
             case "userTask" -> {
                 NodeConfiguration config = configMap.get(elementId);
                 if (config == null) {
                     throw new BusinessException(
                             "UserTask '" + elementId + "' no tiene NodeConfiguration");
                 }
-                if (!"CLIENT_TASK".equals(config.getTaskKind())) {
-                    throw new BusinessException(
-                            "P3.4.1 solo soporta CLIENT_TASK. Nodo: " + elementId
-                            + " (taskKind=" + config.getTaskKind() + ")");
-                }
-                yield NodeType.CLIENT_TASK;
+                var profile = profileResolver.resolve(localName, config);
+                yield WorkflowNode.builder()
+                        .nodeId(elementId)
+                        .type(profile.runtimeType())
+                        .label(name)
+                        .departmentId(profile.departmentId())
+                        .slaHours(profile.slaHours())
+                        .formVersionId(profile.formVersionId())
+                        .build();
             }
             case "serviceTask", "sendTask", "exclusiveGateway", "parallelGateway",
                  "inclusiveGateway", "complexGateway", "task", "subProcess", "callActivity" ->
@@ -165,6 +171,10 @@ public class BpmnExecutionAdapter {
 
             default -> null; // Diagram interchange elements (BPMNDiagram, etc.)
         };
+    }
+
+    private WorkflowNode basicNode(String elementId, NodeType type, String name) {
+        return WorkflowNode.builder().nodeId(elementId).type(type).label(name).build();
     }
 
     private String getName(Element el) {

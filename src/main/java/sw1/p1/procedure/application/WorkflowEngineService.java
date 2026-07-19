@@ -8,6 +8,7 @@ import sw1.p1.notification.application.NotificationService;
 import sw1.p1.notification.dto.CreateNotificationRequest;
 import sw1.p1.policy.domain.WorkflowNode;
 import sw1.p1.policy.domain.WorkflowTransition;
+import sw1.p1.policy.application.NodeExecutionProfileResolver;
 import sw1.p1.procedure.domain.Procedure;
 import sw1.p1.procedure.domain.ProcedureHistory;
 import sw1.p1.procedure.domain.ProcedureHistoryRepository;
@@ -20,6 +21,7 @@ import sw1.p1.task.domain.Task;
 import sw1.p1.task.domain.TaskRepository;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -39,6 +41,7 @@ public class WorkflowEngineService {
     private final ProcedureHistoryRepository historyRepository;
     private final TaskRepository taskRepository;
     private final NotificationService notificationService;
+    private final NodeExecutionProfileResolver profileResolver;
 
     /**
      * Avanza el trámite al siguiente nodo después de que una tarea fue completada.
@@ -222,6 +225,9 @@ public class WorkflowEngineService {
     // ── Creación de tareas ────────────────────────────────────────────────────
 
     private void createInternalTask(Procedure procedure, WorkflowNode node) {
+        boolean versionedExecution = procedure.getPolicyVersionId() != null;
+        if (versionedExecution) profileResolver.validateRuntimeNode(node);
+        Instant activatedAt = Instant.now();
         Task task = Task.builder()
                 .procedureId(procedure.getId())
                 .procedureCode(procedure.getCode())
@@ -230,17 +236,21 @@ public class WorkflowEngineService {
                 .nodeId(node.getNodeId())
                 .label(node.getLabel())
                 .organizationId(procedure.getOrganizationId())
-                .assignedAreaId(node.getAreaId())
+                .assignedDepartmentId(node.getDepartmentId())
                 .taskAudience(TaskAudience.INTERNAL)
                 .status(TaskStatus.PENDING)
-                .form(node.getForm())
-                .createdAt(Instant.now())
-                .updatedAt(Instant.now())
+                .formVersionId(node.getFormVersionId())
+                .createdAt(activatedAt)
+                .dueAt(calculateDueAt(activatedAt, node.getSlaHours()))
+                .updatedAt(activatedAt)
                 .build();
         taskRepository.save(task);
     }
 
     private Task createClientTask(Procedure procedure, WorkflowNode node) {
+        boolean versionedExecution = procedure.getPolicyVersionId() != null;
+        if (versionedExecution) profileResolver.validateRuntimeNode(node);
+        Instant activatedAt = Instant.now();
         Task task = Task.builder()
                 .procedureId(procedure.getId())
                 .procedureCode(procedure.getCode())
@@ -249,15 +259,20 @@ public class WorkflowEngineService {
                 .nodeId(node.getNodeId())
                 .label(node.getLabel())
                 .organizationId(procedure.getOrganizationId())
-                .assignedAreaId(node.getAreaId())
+                .assignedDepartmentId(node.getDepartmentId())
                 .taskAudience(TaskAudience.CLIENT)
                 .status(TaskStatus.PENDING)
                 .assignedClientId(procedure.getClientId())
-                .form(node.getForm())
-                .createdAt(Instant.now())
-                .updatedAt(Instant.now())
+                .formVersionId(node.getFormVersionId())
+                .createdAt(activatedAt)
+                .dueAt(calculateDueAt(activatedAt, node.getSlaHours()))
+                .updatedAt(activatedAt)
                 .build();
         return taskRepository.save(task);
+    }
+
+    private Instant calculateDueAt(Instant activatedAt, Integer slaHours) {
+        return slaHours == null ? null : activatedAt.plus(slaHours, ChronoUnit.HOURS);
     }
 
     /** Envía notificación WebSocket al cliente cuando se le asigna una CLIENT_TASK */

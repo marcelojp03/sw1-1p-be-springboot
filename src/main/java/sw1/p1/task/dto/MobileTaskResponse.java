@@ -20,6 +20,7 @@ public record MobileTaskResponse(
         Instant startedAt,
         Instant completedAt,
         Instant dueAt,
+        String formVersionId,
         FormDefinition form,
         Map<String, Object> formResponse,
         List<MobileAttachmentResponse> attachments

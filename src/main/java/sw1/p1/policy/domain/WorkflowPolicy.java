@@ -65,7 +65,7 @@ public class WorkflowPolicy {
     @Builder.Default
     private List<WorkflowTransition> transitions = new ArrayList<>();
 
-    /** Swimlanes del diagrama (agrupación visual por área) */
+    /** Swimlanes del diagrama (agrupación visual por departamento). */
     @Builder.Default
     private List<Swimlane> swimlanes = new ArrayList<>();
 

@@ -21,12 +21,12 @@ public class TaskController {
 
     private final TaskService taskService;
 
-    /** Bandeja por área */
+    /** Bandeja por departamento. */
     @GetMapping
-    public ResponseEntity<Page<TaskResponse>> findByArea(
-            @RequestParam String areaId,
+    public ResponseEntity<Page<TaskResponse>> findByDepartment(
+            @RequestParam String departmentId,
             @PageableDefault(size = 20, sort = "createdAt") Pageable pageable) {
-        return ResponseEntity.ok(taskService.findByArea(areaId, pageable));
+        return ResponseEntity.ok(taskService.findByDepartment(departmentId, pageable));
     }
 
     /** Tareas del OFFICER autenticado */

@@ -126,7 +126,7 @@ public class DashboardService {
     // ──────────────── tasks overdue ────────────────
 
     public Page<TaskOverdueResponse> getTasksOverdue(
-            String organizationId, String areaId, int page, int size) {
+            String organizationId, String departmentId, int page, int size) {
 
         Instant now = Instant.now();
 
@@ -134,8 +134,8 @@ public class DashboardService {
                 .and("dueAt").lt(now)
                 .and("status").in(TaskStatus.PENDING.name(), TaskStatus.IN_PROGRESS.name());
 
-        if (areaId != null && !areaId.isBlank()) {
-            criteria = criteria.and("assignedAreaId").is(areaId);
+        if (departmentId != null && !departmentId.isBlank()) {
+            criteria = criteria.and("assignedDepartmentId").is(departmentId);
         }
 
         Query countQuery = Query.query(criteria);
@@ -151,7 +151,7 @@ public class DashboardService {
                         t.getProcedureId(),
                         t.getProcedureCode(),
                         t.getLabel(),
-                        t.getAssignedAreaId(),
+                        t.getAssignedDepartmentId(),
                         t.getAssignedUserId(),
                         t.getDueAt(),
                         t.getCreatedAt(),

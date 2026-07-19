@@ -24,7 +24,7 @@ import java.util.Map;
 @Builder
 @CompoundIndexes({
     @CompoundIndex(name = "proc_node", def = "{'procedureId': 1, 'nodeId': 1}"),
-    @CompoundIndex(name = "area_status", def = "{'assignedAreaId': 1, 'status': 1}"),
+    @CompoundIndex(name = "department_status", def = "{'assignedDepartmentId': 1, 'status': 1}"),
     @CompoundIndex(name = "assignee_status", def = "{'assignedUserId': 1, 'status': 1}")
 })
 public class Task {
@@ -48,8 +48,8 @@ public class Task {
 
     private String organizationId;
 
-    /** Área responsable (para bandeja de OFFICER) */
-    private String assignedAreaId;
+    /** Departamento responsable para la bandeja de OFFICER. */
+    private String assignedDepartmentId;
 
     private TaskAudience taskAudience;
 
@@ -64,7 +64,11 @@ public class Task {
      */
     private String assignedClientId;
 
-    /** Definición del formulario serializada desde el nodo */
+    /** Referencia exacta al formulario versionado; fuente oficial del flujo BPMN. */
+    private String formVersionId;
+
+    /** @deprecated Formulario embebido legacy, conservado solo para lectura. */
+    @Deprecated
     private sw1.p1.policy.domain.FormDefinition form;
 
     /** Respuesta del formulario al completar la tarea */

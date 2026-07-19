@@ -22,8 +22,8 @@ public class WorkflowNode {
 
     private String label;
 
-    /** Para nodos manuales: área responsable */
-    private String areaId;
+    /** Departamento responsable para tareas internas. */
+    private String departmentId;
 
     /** Posición en el canvas (para el diseñador visual) */
     private Integer posX;
@@ -32,7 +32,11 @@ public class WorkflowNode {
     /** SLA en horas (opcional) */
     private Integer slaHours;
 
-    /** Formulario dinámico (para MANUAL_FORM) */
+    /** Referencia exacta al formulario versionado; null cuando no aplica. */
+    private String formVersionId;
+
+    /** @deprecated Esquema embebido legacy, conservado solo para snapshots históricos. */
+    @Deprecated
     private FormDefinition form;
 
     /** Plantilla de mensaje (para NOTIFICATION) */

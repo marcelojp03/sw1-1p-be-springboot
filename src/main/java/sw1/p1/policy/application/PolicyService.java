@@ -187,16 +187,15 @@ public class PolicyService {
             throw new BusinessException("La política debe tener al menos un nodo END");
         }
 
-        // Nodos manuales deben tener areaId
+        // Nodos manuales deben tener departmentId
         nodes.stream()
                 .filter(n -> n.getType() == NodeType.MANUAL_FORM
-                        || n.getType() == NodeType.MANUAL_ACTION
-                        || n.getType() == NodeType.CLIENT_TASK)
-                .filter(n -> n.getAreaId() == null || n.getAreaId().isBlank())
+                        || n.getType() == NodeType.MANUAL_ACTION)
+                .filter(n -> n.getDepartmentId() == null || n.getDepartmentId().isBlank())
                 .findFirst()
                 .ifPresent(n -> {
                     throw new BusinessException(
-                            "El nodo '" + n.getLabel() + "' requiere un areaId");
+                            "El nodo '" + n.getLabel() + "' requiere un departmentId");
                 });
 
         // Las transiciones deben apuntar a nodos existentes

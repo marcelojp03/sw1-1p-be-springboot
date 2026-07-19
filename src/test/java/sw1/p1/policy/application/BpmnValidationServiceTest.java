@@ -14,7 +14,8 @@ class BpmnValidationServiceTest {
 
     private final NodeConfigurationRepository nodeConfigRepo = mock(NodeConfigurationRepository.class);
     private final WorkflowPolicyRepository policyRepo = mock(WorkflowPolicyRepository.class);
-    private final BpmnValidationService svc = new BpmnValidationService(nodeConfigRepo, policyRepo);
+    private final BpmnValidationService svc = new BpmnValidationService(
+            nodeConfigRepo, policyRepo, new NodeExecutionProfileResolver());
 
     private final String VALID_MIN_XML = """
             <?xml version="1.0"?>
@@ -231,6 +232,72 @@ class BpmnValidationServiceTest {
                 List.of(buildConfig("u1", "OFFICER_TASK", "DEP-1")));
         var r = svc.validate("POL", "V1", xml);
         assertTrue(r.valid(), "XML válido con config debería pasar. Violations: " + r.violations());
+    }
+
+    @Test
+    void unsupportedUserTaskKind_ShouldFail() {
+        when(nodeConfigRepo.findByPolicyVersionId("V1")).thenReturn(
+                List.of(buildConfig("u1", "AUTOMATIC_TASK", null)));
+
+        var r = svc.validate("POL", "V1", userTaskXml());
+
+        assertTrue(r.violations().stream()
+                .anyMatch(v -> v.code().equals("BPMN_CONFIG_UNSUPPORTED_TASKKIND")));
+    }
+
+    @Test
+    void nonPositiveSla_ShouldFail() {
+        var config = buildConfig("u1", "CLIENT_TASK", null);
+        config.setSlaHours(0);
+        when(nodeConfigRepo.findByPolicyVersionId("V1")).thenReturn(List.of(config));
+
+        var r = svc.validate("POL", "V1", userTaskXml());
+
+        assertTrue(r.violations().stream()
+                .anyMatch(v -> v.code().equals("BPMN_CONFIG_INVALID_SLA")));
+    }
+
+    @Test
+    void allSupportedUserTaskProfilesAreValid() {
+        var profiles = List.of(
+                buildConfig("u1", "CLIENT_TASK", null),
+                buildConfig("u1", "CLIENT_TASK", null),
+                buildConfig("u1", "OFFICER_TASK", "dep-1"),
+                buildConfig("u1", "OFFICER_TASK", "dep-1"));
+        profiles.get(1).setFormVersionId("form-client");
+        profiles.get(3).setFormVersionId("form-officer");
+
+        for (NodeConfiguration config : profiles) {
+            when(nodeConfigRepo.findByPolicyVersionId("V1")).thenReturn(List.of(config));
+            var result = svc.validate("POL", "V1", userTaskXml());
+            assertTrue(result.valid(), "Perfil debería ser materializable: " + config);
+        }
+    }
+
+    @Test
+    void serviceTaskWithFormIsNotMaterializable() {
+        var config = buildConfig("service-1", "OFFICER_TASK", "dep-1");
+        config.setFormVersionId("form-v1");
+        when(nodeConfigRepo.findByPolicyVersionId("V1")).thenReturn(List.of(config));
+        String xml = userTaskXml().replace("userTask id=\"u1\"", "serviceTask id=\"service-1\"")
+                .replace("targetRef=\"u1\"", "targetRef=\"service-1\"")
+                .replace("sourceRef=\"u1\"", "sourceRef=\"service-1\"");
+
+        var result = svc.validate("POL", "V1", xml);
+
+        assertTrue(result.violations().stream()
+                .anyMatch(v -> v.code().equals("BPMN_CONFIG_NOT_USER_TASK")));
+    }
+
+    private String userTaskXml() {
+        return """
+                <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+                  <bpmn:process id="P1" isExecutable="true">
+                    <bpmn:startEvent id="s1"/><bpmn:userTask id="u1"/><bpmn:endEvent id="e1"/>
+                    <bpmn:sequenceFlow id="f1" sourceRef="s1" targetRef="u1"/>
+                    <bpmn:sequenceFlow id="f2" sourceRef="u1" targetRef="e1"/>
+                  </bpmn:process>
+                </bpmn:definitions>""";
     }
 
     private NodeConfiguration buildConfig(String elementId, String taskKind, String deptId) {

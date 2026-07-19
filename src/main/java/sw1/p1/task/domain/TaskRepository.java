@@ -11,7 +11,7 @@ import java.util.Optional;
 
 public interface TaskRepository extends MongoRepository<Task, String> {
 
-    Page<Task> findByAssignedAreaIdAndStatus(String assignedAreaId, TaskStatus status, Pageable pageable);
+    Page<Task> findByAssignedDepartmentIdAndStatus(String assignedDepartmentId, TaskStatus status, Pageable pageable);
 
     Page<Task> findByAssignedUserIdAndStatus(String userId, TaskStatus status, Pageable pageable);
 
