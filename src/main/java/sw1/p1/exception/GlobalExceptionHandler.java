@@ -47,6 +47,15 @@ public class GlobalExceptionHandler {
         return pd;
     }
 
+    @ExceptionHandler(ValidationException.class)
+    public ProblemDetail handlePolicyValidation(ValidationException ex) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(
+                HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+        pd.setType(URI.create("about:blank"));
+        pd.setProperty("violations", ex.getViolations());
+        return pd;
+    }
+
     @ExceptionHandler(BadCredentialsException.class)
     public ProblemDetail handleBadCredentials(BadCredentialsException ex) {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, "Credenciales incorrectas");

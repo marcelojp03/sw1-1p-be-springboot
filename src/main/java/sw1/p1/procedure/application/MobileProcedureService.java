@@ -12,9 +12,7 @@ import sw1.p1.client.domain.ClientRepository;
 import sw1.p1.exception.ConflictException;
 import sw1.p1.exception.BusinessException;
 import sw1.p1.exception.NotFoundException;
-import sw1.p1.shared.PolicyVersionStatus;
 import sw1.p1.policy.domain.PolicyVersion;
-import sw1.p1.policy.domain.PolicyVersionRepository;
 import sw1.p1.policy.domain.WorkflowPolicy;
 import sw1.p1.policy.domain.WorkflowPolicyRepository;
 import sw1.p1.procedure.domain.*;
@@ -32,6 +30,7 @@ import sw1.p1.shared.storage.StorageService;
 import sw1.p1.notification.application.NotificationService;
 import sw1.p1.notification.dto.NotificationResponse;
 import sw1.p1.policy.dto.AvailablePolicyResponse;
+import sw1.p1.policy.application.PublishedPolicyAvailabilityService;
 import sw1.p1.task.domain.Task;
 import sw1.p1.task.domain.TaskRepository;
 import sw1.p1.task.dto.CompleteTaskRequest;
@@ -47,7 +46,7 @@ import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -56,13 +55,14 @@ public class MobileProcedureService {
     private final ProcedureRepository procedureRepository;
     private final ProcedureHistoryRepository historyRepository;
     private final WorkflowPolicyRepository policyRepository;
-    private final PolicyVersionRepository versionRepository;
     private final UserRepository userRepository;
     private final ClientRepository clientRepository;
     private final TaskRepository taskRepository;
     private final WorkflowEngineService workflowEngine;
     private final NotificationService notificationService;
     private final StorageService storageService;
+    private final PublishedPolicyAvailabilityService availabilityService;
+    private final ProcedureService procedureService;
 
     /** Obtiene el clientId del usuario autenticado */
     private String currentClientId() {
@@ -123,94 +123,28 @@ public class MobileProcedureService {
     }
 
     public ProcedureResponse start(StartProcedureRequest request) {
-        WorkflowPolicy policy = policyRepository.findById(request.policyId())
-                .orElseThrow(() -> new NotFoundException("Política no encontrada: " + request.policyId()));
-
-        if (policy.getStatus() != PolicyStatus.PUBLISHED) {
-            throw new BusinessException("Solo se pueden iniciar trámites con políticas PUBLISHED");
-        }
-        if (!policy.getAllowedStartChannels().contains("MOBILE")) {
-            throw new BusinessException("Esta política no permite iniciar trámites por canal MOBILE");
-        }
-
-        String clientId = currentClientId();
-        String userId = currentUserId();
-
-        // Verificar que el clientId de la solicitud corresponde al cliente autenticado
-        if (request.clientId() != null && !request.clientId().equals(clientId)) {
-            throw new BusinessException("No puede iniciar trámites en nombre de otro cliente");
-        }
-
-        PolicySnapshot snapshot = PolicySnapshot.builder()
-                .policyId(policy.getId())
-                .policyKey(policy.getPolicyKey())
-                .policyName(policy.getName())
-                .version(policy.getVersion())
-                .status(policy.getStatus())
-                .nodes(policy.getNodes())
-                .transitions(policy.getTransitions())
-                .snapshotAt(Instant.now())
-                .build();
-
-        var client = clientRepository.findById(clientId).orElse(null);
-        Procedure.RequesterInfo requester = null;
-        if (client != null) {
-            requester = Procedure.RequesterInfo.builder()
-                    .fullName(client.getFullName())
-                    .documentType(client.getDocumentType())
-                    .documentNumber(client.getDocumentNumber())
-                    .phone(client.getPhone())
-                    .email(client.getEmail())
-                    .build();
-        }
-
-        Instant now = Instant.now();
-        long sequential = procedureRepository.count() + 1;
-        int year = ZonedDateTime.now(ZoneOffset.UTC).getYear();
-        String code = String.format("TRM-%d-%04d", year, sequential);
-
-        Procedure procedure = Procedure.builder()
-                .code(code)
-                .organizationId(request.organizationId())
-                .policyId(policy.getId())
-                .policyVersion(policy.getVersion())
-                .clientId(clientId)
-                .startedBy(userId)
-                .requester(requester)
-                .status(ProcedureStatus.CREATED)
-                .policySnapshot(snapshot)
-                .startChannel("MOBILE")
-                .startedAt(now)
-                .createdAt(now)
-                .updatedAt(now)
-                .build();
-
-        procedure = procedureRepository.save(procedure);
-        workflowEngine.start(procedure, userId);
-
-        procedure = getOrThrow(procedure.getId());
-        return toResponse(procedure);
+        return procedureService.startLatestForClient(
+                request.policyId(), request.clientId(),
+                SecurityContextHolder.getContext().getAuthentication());
     }
 
     /** Políticas disponibles para iniciar trámites desde canal MOBILE */
     public List<AvailablePolicyResponse> availablePolicies() {
         String organizationId = currentClient().getOrganizationId();
         return policyRepository
-                .findByOrganizationIdAndAllowedStartChannelsContaining(
-                        organizationId, "MOBILE")
+                .findByOrganizationIdAndStatusAndAllowedStartChannelsContaining(
+                        organizationId, PolicyStatus.PUBLISHED, "MOBILE")
                 .stream()
-                .map(p -> {
-                    PolicyVersion published = versionRepository
-                            .findTopByPolicyIdAndStatusOrderByVersionNumberDesc(
-                                    p.getId(), PolicyVersionStatus.PUBLISHED)
-                            .orElse(null);
-                    if (published == null) return null;
+                .map(availabilityService::resolveCatalogPointer)
+                .flatMap(Optional::stream)
+                .map(available -> {
+                    WorkflowPolicy p = available.policy();
+                    PolicyVersion published = available.version();
                     return new AvailablePolicyResponse(
                             p.getId(), p.getPolicyKey(), p.getName(),
                             p.getDescription(), published.getId(),
                             published.getVersionNumber(), p.getAllowedStartChannels());
                 })
-                .filter(Objects::nonNull)
                 .toList();
     }
 

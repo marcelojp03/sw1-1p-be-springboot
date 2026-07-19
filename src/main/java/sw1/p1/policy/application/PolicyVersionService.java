@@ -17,6 +17,8 @@ import sw1.p1.policy.domain.*;
 import sw1.p1.policy.dto.NodeConfigurationMapper;
 import sw1.p1.policy.dto.NodeConfigurationRequest;
 import sw1.p1.policy.dto.NodeConfigurationResponse;
+import sw1.p1.procedure.application.BpmnExecutionAdapter;
+import sw1.p1.shared.PolicyStatus;
 import sw1.p1.shared.PolicyVersionStatus;
 
 import java.time.Instant;
@@ -34,11 +36,12 @@ public class PolicyVersionService {
     private final BpmnValidationService validationService;
     private final FormVersionRepository formVersionRepository;
     private final FormTemplateRepository formTemplateRepository;
+    private final BpmnExecutionAdapter bpmnExecutionAdapter;
 
     @Transactional
-    public PolicyVersion createDraft(String policyId, String createdBy) {
-        WorkflowPolicy policy = policyRepository.findById(policyId)
-                .orElseThrow(() -> new NotFoundException("Política no encontrada: " + policyId));
+    public synchronized PolicyVersion createDraft(String organizationId, String policyId,
+                                                  String createdBy) {
+        WorkflowPolicy policy = requirePolicyForOrganization(organizationId, policyId);
 
         if (versionRepository.existsByPolicyIdAndStatus(policyId, PolicyVersionStatus.DRAFT)) {
             throw new BusinessException("Ya existe un borrador para esta política");
@@ -69,11 +72,17 @@ public class PolicyVersionService {
         return saved;
     }
 
-    public List<PolicyVersion> listVersions(String policyId) {
+    public List<PolicyVersion> listVersions(String organizationId, String policyId) {
+        requirePolicyForOrganization(organizationId, policyId);
         return versionRepository.findByPolicyIdOrderByVersionNumberDesc(policyId);
     }
 
-    public PolicyVersion getVersion(String policyId, String versionId) {
+    public PolicyVersion getVersion(String organizationId, String policyId, String versionId) {
+        requirePolicyForOrganization(organizationId, policyId);
+        return getVersionForPolicy(policyId, versionId);
+    }
+
+    private PolicyVersion getVersionForPolicy(String policyId, String versionId) {
         PolicyVersion v = versionRepository.findById(versionId)
                 .orElseThrow(() -> new NotFoundException("Versión no encontrada: " + versionId));
         if (!v.getPolicyId().equals(policyId)) {
@@ -82,8 +91,10 @@ public class PolicyVersionService {
         return v;
     }
 
-    public PolicyVersion updateDiagram(String policyId, String versionId, String bpmnXml) {
-        PolicyVersion version = getVersion(policyId, versionId);
+    public PolicyVersion updateDiagram(String organizationId, String policyId, String versionId,
+                                       String bpmnXml) {
+        requirePolicyForOrganization(organizationId, policyId);
+        PolicyVersion version = getVersionForPolicy(policyId, versionId);
         if (version.getStatus() != PolicyVersionStatus.DRAFT) {
             throw new BusinessException("Solo se puede editar una versión en estado DRAFT");
         }
@@ -96,7 +107,7 @@ public class PolicyVersionService {
     public List<NodeConfigurationResponse> getNodeConfigurations(String organizationId, String policyId,
                                                                   String versionId) {
         requirePolicyForOrganization(organizationId, policyId);
-        getVersion(policyId, versionId);
+        getVersionForPolicy(policyId, versionId);
         return nodeConfigRepository.findByPolicyVersionId(versionId).stream()
                 .map(NodeConfigurationMapper::toResponse)
                 .toList();
@@ -106,7 +117,7 @@ public class PolicyVersionService {
                                                             String versionId, String elementId,
                                                             NodeConfigurationRequest request) {
         requirePolicyForOrganization(organizationId, policyId);
-        PolicyVersion version = getVersion(policyId, versionId);
+        PolicyVersion version = getVersionForPolicy(policyId, versionId);
         requireDraft(version);
         validateSla(request.slaHours());
 
@@ -130,7 +141,7 @@ public class PolicyVersionService {
     public void deleteNodeConfiguration(String organizationId, String policyId, String versionId,
                                         String elementId) {
         requirePolicyForOrganization(organizationId, policyId);
-        requireDraft(getVersion(policyId, versionId));
+        requireDraft(getVersionForPolicy(policyId, versionId));
         nodeConfigRepository.findByPolicyVersionIdAndBpmnElementId(versionId, elementId)
                 .ifPresent(nodeConfigRepository::delete);
     }
@@ -178,34 +189,48 @@ public class PolicyVersionService {
         }
     }
 
-    @Transactional
-    public PolicyVersion publish(String policyId, String versionId, String publishedBy) {
-        PolicyVersion version = getVersion(policyId, versionId);
-        if (version.getStatus() != PolicyVersionStatus.DRAFT) {
-            throw new BusinessException("Solo se puede publicar una versión en estado DRAFT");
+    public synchronized PolicyVersion publish(String organizationId, String policyId, String versionId,
+                                              String publishedBy) {
+        WorkflowPolicy policy = requirePolicyForOrganization(organizationId, policyId);
+        PolicyVersion version = getVersionForPolicy(policyId, versionId);
+
+        if (version.getStatus() == PolicyVersionStatus.PUBLISHED
+                && versionId.equals(policy.getLatestPublishedVersionId())
+                && policy.getStatus() == PolicyStatus.PUBLISHED) {
+            archiveOtherPublishedVersions(policyId, versionId);
+            return version;
+        }
+
+        boolean recoverablePartialPublication = version.getStatus() == PolicyVersionStatus.PUBLISHED
+                && versionId.equals(policy.getCurrentDraftVersionId());
+        if (version.getStatus() != PolicyVersionStatus.DRAFT && !recoverablePartialPublication) {
+            throw new ConflictException("Solo se puede publicar una versión en estado DRAFT");
         }
 
         log.info("PUBLISH versionId={} xmlLen={}", versionId,
                 version.getBpmnXml() != null ? version.getBpmnXml().length() : 0);
+        List<NodeConfiguration> configs = nodeConfigRepository.findByPolicyVersionId(versionId);
         var result = validationService.validate(policyId, versionId, version.getBpmnXml());
         if (!result.valid()) {
             throw new ValidationException(result.violations());
         }
+        validatePublicationFormAssociations(organizationId, version, configs);
+        try {
+            bpmnExecutionAdapter.validateForPublication(version, configs);
+        } catch (BusinessException exception) {
+            throw new ValidationException(List.of(new BpmnValidationService.Violation(
+                    "BPMN_NOT_MATERIALIZABLE", null, exception.getMessage())));
+        }
 
-        WorkflowPolicy policy = policyRepository.findById(policyId)
-                .orElseThrow(() -> new NotFoundException("Política no encontrada"));
+        validatePreviousPointer(policy, versionId);
 
-        // Archivar versión publicada anterior si existe
-        versionRepository.findTopByPolicyIdAndStatusOrderByVersionNumberDesc(
-                        policyId, PolicyVersionStatus.PUBLISHED)
-                .ifPresent(prev -> {
-                    prev.setStatus(PolicyVersionStatus.ARCHIVED);
-                    versionRepository.save(prev);
-                });
-
-        version.setStatus(PolicyVersionStatus.PUBLISHED);
-        version.setPublishedAt(Instant.now());
-        PolicyVersion published = versionRepository.save(version);
+        Instant publishedAt = version.getPublishedAt() != null ? version.getPublishedAt() : Instant.now();
+        PolicyVersion published = version;
+        if (version.getStatus() == PolicyVersionStatus.DRAFT) {
+            version.setStatus(PolicyVersionStatus.PUBLISHED);
+            version.setPublishedAt(publishedAt);
+            published = versionRepository.save(version);
+        }
         log.info("PUBLISHED versionId={} status={} xmlLen={}",
                 published.getId(), published.getStatus(),
                 published.getBpmnXml() != null ? published.getBpmnXml().length() : 0);
@@ -213,13 +238,59 @@ public class PolicyVersionService {
         policy.setCurrentDraftVersionId(null);
         policy.setLatestPublishedVersionId(published.getId());
         policy.setVersion(version.getVersionNumber());
+        policy.setStatus(PolicyStatus.PUBLISHED);
+        policy.setPublishedBy(publishedBy);
+        policy.setPublishedAt(publishedAt);
+        policy.setUpdatedAt(publishedAt);
         policyRepository.save(policy);
+        archiveOtherPublishedVersions(policyId, versionId);
 
         return published;
     }
 
-    public BpmnValidationService.ValidationResult validate(String policyId, String versionId,
-                                                            String bpmnXml) {
+    private void validatePublicationFormAssociations(String organizationId, PolicyVersion version,
+                                                      List<NodeConfiguration> configs) {
+        List<BpmnValidationService.Violation> violations = new java.util.ArrayList<>();
+        for (NodeConfiguration config : configs) {
+            if (config.getFormVersionId() == null) continue;
+            try {
+                validateFormAssociation(organizationId, version, config);
+            } catch (RuntimeException exception) {
+                violations.add(new BpmnValidationService.Violation(
+                        "FORM_VERSION_REFERENCE_INVALID",
+                        config.getBpmnElementId(),
+                        "La referencia de formulario no es válida para publicación"));
+            }
+        }
+        if (!violations.isEmpty()) throw new ValidationException(violations);
+    }
+
+    private void validatePreviousPointer(WorkflowPolicy policy, String targetVersionId) {
+        String pointer = policy.getLatestPublishedVersionId();
+        if (pointer == null || pointer.isBlank() || pointer.equals(targetVersionId)) return;
+        PolicyVersion previous = versionRepository.findById(pointer)
+                .orElseThrow(() -> new ConflictException(
+                        "latestPublishedVersionId apunta a una versión inexistente"));
+        if (!policy.getId().equals(previous.getPolicyId())
+                || previous.getStatus() != PolicyVersionStatus.PUBLISHED) {
+            throw new ConflictException("latestPublishedVersionId es inconsistente");
+        }
+    }
+
+    private void archiveOtherPublishedVersions(String policyId, String currentVersionId) {
+        versionRepository.findByPolicyIdOrderByVersionNumberDesc(policyId).stream()
+                .filter(candidate -> !currentVersionId.equals(candidate.getId()))
+                .filter(candidate -> candidate.getStatus() == PolicyVersionStatus.PUBLISHED)
+                .forEach(candidate -> {
+                    candidate.setStatus(PolicyVersionStatus.ARCHIVED);
+                    versionRepository.save(candidate);
+                });
+    }
+
+    public BpmnValidationService.ValidationResult validate(String organizationId, String policyId,
+                                                            String versionId, String bpmnXml) {
+        requirePolicyForOrganization(organizationId, policyId);
+        getVersionForPolicy(policyId, versionId);
         return validationService.validate(policyId, versionId, bpmnXml);
     }
 

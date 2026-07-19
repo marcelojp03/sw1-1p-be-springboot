@@ -12,7 +12,7 @@ import sw1.p1.policy.dto.NodeConfigurationRequest;
 import sw1.p1.policy.dto.NodeConfigurationResponse;
 import sw1.p1.procedure.application.ProcedureService;
 import sw1.p1.procedure.dto.ProcedureResponse;
-import sw1.p1.procedure.dto.StartProcedureRequest;
+import sw1.p1.procedure.dto.StartVersionedProcedureRequest;
 import sw1.p1.form.application.CurrentOrganizationResolver;
 
 import jakarta.validation.Valid;
@@ -34,18 +34,21 @@ public class PolicyVersionController {
     public ResponseEntity<PolicyVersion> createDraft(@PathVariable String policyId) {
         String userId = SecurityContextHolder.getContext().getAuthentication().getName();
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(versionService.createDraft(policyId, userId));
+                .body(versionService.createDraft(
+                        organizationResolver.requireOrganizationId(), policyId, userId));
     }
 
     @GetMapping
     public ResponseEntity<List<PolicyVersion>> listVersions(@PathVariable String policyId) {
-        return ResponseEntity.ok(versionService.listVersions(policyId));
+        return ResponseEntity.ok(versionService.listVersions(
+                organizationResolver.requireOrganizationId(), policyId));
     }
 
     @GetMapping("/{versionId}")
     public ResponseEntity<PolicyVersion> getVersion(@PathVariable String policyId,
-                                                     @PathVariable String versionId) {
-        return ResponseEntity.ok(versionService.getVersion(policyId, versionId));
+                                                      @PathVariable String versionId) {
+        return ResponseEntity.ok(versionService.getVersion(
+                organizationResolver.requireOrganizationId(), policyId, versionId));
     }
 
     @PutMapping("/{versionId}/diagram")
@@ -56,7 +59,8 @@ public class PolicyVersionController {
         if (bpmnXml == null || bpmnXml.isBlank()) {
             return ResponseEntity.badRequest().build();
         }
-        return ResponseEntity.ok(versionService.updateDiagram(policyId, versionId, bpmnXml));
+        return ResponseEntity.ok(versionService.updateDiagram(
+                organizationResolver.requireOrganizationId(), policyId, versionId, bpmnXml));
     }
 
     @GetMapping("/{versionId}/nodes")
@@ -87,8 +91,10 @@ public class PolicyVersionController {
     @PostMapping("/{versionId}/validate")
     public ResponseEntity<Map<String, Object>> validate(@PathVariable String policyId,
                                                          @PathVariable String versionId) {
-        PolicyVersion version = versionService.getVersion(policyId, versionId);
-        var result = versionService.validate(policyId, versionId, version.getBpmnXml());
+        String organizationId = organizationResolver.requireOrganizationId();
+        PolicyVersion version = versionService.getVersion(organizationId, policyId, versionId);
+        var result = versionService.validate(
+                organizationId, policyId, versionId, version.getBpmnXml());
 
         Map<String, Object> body = new java.util.LinkedHashMap<>();
         body.put("valid", result.valid());
@@ -100,16 +106,17 @@ public class PolicyVersionController {
     public ResponseEntity<PolicyVersion> publish(@PathVariable String policyId,
                                                   @PathVariable String versionId) {
         String userId = SecurityContextHolder.getContext().getAuthentication().getName();
-        return ResponseEntity.ok(versionService.publish(policyId, versionId, userId));
+        return ResponseEntity.ok(versionService.publish(
+                organizationResolver.requireOrganizationId(), policyId, versionId, userId));
     }
 
     @PostMapping("/{versionId}/procedures")
     public ResponseEntity<ProcedureResponse> startProcedure(
             @PathVariable String policyId,
             @PathVariable String versionId,
-            @Valid @RequestBody StartProcedureRequest request) {
+            @RequestBody(required = false) StartVersionedProcedureRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(procedureService.startFromVersion(
-                        policyId, versionId, request.clientId(), request.organizationId()));
+                .body(procedureService.startFromVersionForInternal(
+                        policyId, versionId, request != null ? request.clientId() : null));
     }
 }

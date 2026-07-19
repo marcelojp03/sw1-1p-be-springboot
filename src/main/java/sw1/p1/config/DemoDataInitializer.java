@@ -19,6 +19,10 @@ import sw1.p1.policy.domain.FormField;
 import sw1.p1.policy.domain.WorkflowNode;
 import sw1.p1.policy.domain.WorkflowPolicy;
 import sw1.p1.policy.domain.WorkflowTransition;
+import sw1.p1.policy.domain.NodeConfiguration;
+import sw1.p1.policy.domain.NodeConfigurationRepository;
+import sw1.p1.policy.domain.PolicyVersion;
+import sw1.p1.policy.domain.PolicyVersionRepository;
 import sw1.p1.procedure.domain.PolicySnapshot;
 import sw1.p1.procedure.domain.Procedure;
 import sw1.p1.procedure.domain.ProcedureHistory;
@@ -27,6 +31,7 @@ import sw1.p1.procedure.domain.ProcedureRepository;
 import sw1.p1.policy.domain.WorkflowPolicyRepository;
 import sw1.p1.shared.NodeType;
 import sw1.p1.shared.PolicyStatus;
+import sw1.p1.shared.PolicyVersionStatus;
 import sw1.p1.shared.ProcedureStatus;
 import sw1.p1.shared.TaskAudience;
 import sw1.p1.shared.TaskStatus;
@@ -40,6 +45,7 @@ import org.springframework.data.domain.Pageable;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -60,6 +66,8 @@ public class DemoDataInitializer implements ApplicationRunner {
     private final UserRepository userRepository;
     private final ClientRepository clientRepository;
     private final WorkflowPolicyRepository workflowPolicyRepository;
+    private final PolicyVersionRepository policyVersionRepository;
+    private final NodeConfigurationRepository nodeConfigurationRepository;
     private final ProcedureRepository procedureRepository;
     private final ProcedureHistoryRepository procedureHistoryRepository;
     private final TaskRepository taskRepository;
@@ -94,7 +102,8 @@ public class DemoDataInitializer implements ApplicationRunner {
             String analisisId = (orgAreas != null && orgAreas.size() > 2) ? orgAreas.get(2).getId() : atencionId;
             String creatorId = userRepository.findByEmail(adminEmail).map(User::getId).orElse("system");
 
-            if (workflowPolicyRepository.findByOrganizationIdAndStatus(existingOrgId, PolicyStatus.PUBLISHED).isEmpty()) {
+            if (workflowPolicyRepository.findByOrganizationIdAndStatus(
+                    existingOrgId, PolicyStatus.PUBLISHED).isEmpty()) {
                 log.info("Sembrando políticas demo para organización existente...");
                 seedPoliciesDemo(existingOrgId, atencionId, revisionId, analisisId, creatorId);
             }
@@ -295,6 +304,7 @@ public class DemoDataInitializer implements ApplicationRunner {
                 .build();
 
         politicaCredito = workflowPolicyRepository.save(politicaCredito);
+        politicaCredito = seedPublishedVersion(politicaCredito, officerId);
         final String polCreditoId = politicaCredito.getId();
         log.info("Política 'Solicitud de Crédito' creada: {}", polCreditoId);
 
@@ -376,6 +386,7 @@ public class DemoDataInitializer implements ApplicationRunner {
                 .build();
 
         politicaReclamo = workflowPolicyRepository.save(politicaReclamo);
+        politicaReclamo = seedPublishedVersion(politicaReclamo, officerId);
         final String polReclamoId = politicaReclamo.getId();
         log.info("Política 'Reclamo de Servicio' creada: {}", polReclamoId);
 
@@ -604,7 +615,7 @@ public class DemoDataInitializer implements ApplicationRunner {
                         .condition("decision == RECHAZADO").build()
         );
 
-        workflowPolicyRepository.save(WorkflowPolicy.builder()
+        WorkflowPolicy credito = workflowPolicyRepository.save(WorkflowPolicy.builder()
                 .organizationId(orgId).policyKey("credito_personal")
                 .name("Solicitud de Crédito Personal")
                 .description("Proceso de solicitud y evaluación de crédito personal")
@@ -616,6 +627,7 @@ public class DemoDataInitializer implements ApplicationRunner {
                 .createdAt(Instant.now().minus(10, ChronoUnit.DAYS))
                 .updatedAt(Instant.now().minus(7, ChronoUnit.DAYS))
                 .build());
+        seedPublishedVersion(credito, creatorId);
         log.info("Política 'Solicitud de Crédito' sembrada.");
 
         // ── Política 2: Reclamo de Servicio ──────────────────────────────────────
@@ -657,7 +669,7 @@ public class DemoDataInitializer implements ApplicationRunner {
                 WorkflowTransition.builder().transitionId("t4").from("node-revision").to("node-end").build()
         );
 
-        workflowPolicyRepository.save(WorkflowPolicy.builder()
+        WorkflowPolicy reclamo = workflowPolicyRepository.save(WorkflowPolicy.builder()
                 .organizationId(orgId).policyKey("reclamo_servicio")
                 .name("Reclamo de Servicio")
                 .description("Proceso para gestión de reclamos de clientes")
@@ -669,7 +681,83 @@ public class DemoDataInitializer implements ApplicationRunner {
                 .createdAt(Instant.now().minus(9, ChronoUnit.DAYS))
                 .updatedAt(Instant.now().minus(6, ChronoUnit.DAYS))
                 .build());
+        seedPublishedVersion(reclamo, creatorId);
         log.info("Política 'Reclamo de Servicio' sembrada.");
+    }
+
+    private WorkflowPolicy seedPublishedVersion(WorkflowPolicy policy, String creatorId) {
+        String versionId = policy.getId() + "-V1";
+        Instant publishedAt = policy.getPublishedAt() != null ? policy.getPublishedAt() : Instant.now();
+        policyVersionRepository.save(PolicyVersion.builder()
+                .id(versionId)
+                .policyId(policy.getId())
+                .versionNumber(1)
+                .status(PolicyVersionStatus.PUBLISHED)
+                .bpmnXml(demoBpmn(policy))
+                .createdBy(creatorId)
+                .createdAt(policy.getCreatedAt())
+                .publishedAt(publishedAt)
+                .build());
+        policy.getNodes().stream()
+                .filter(node -> node.getType() == NodeType.CLIENT_TASK
+                        || node.getType() == NodeType.MANUAL_FORM
+                        || node.getType() == NodeType.MANUAL_ACTION)
+                .forEach(node -> nodeConfigurationRepository.save(NodeConfiguration.builder()
+                        .id(versionId + "-" + node.getNodeId())
+                        .policyId(policy.getId())
+                        .policyVersionId(versionId)
+                        .bpmnElementId(node.getNodeId())
+                        .taskKind(node.getType() == NodeType.CLIENT_TASK
+                                ? "CLIENT_TASK" : "OFFICER_TASK")
+                        .assignmentMode(node.getType() == NodeType.CLIENT_TASK
+                                ? "CLIENT" : "DEPARTMENT")
+                        .departmentId(node.getDepartmentId())
+                        .slaHours(node.getSlaHours())
+                        .label(node.getLabel())
+                        .build()));
+        policy.setLatestPublishedVersionId(versionId);
+        return workflowPolicyRepository.save(policy);
+    }
+
+    private String demoBpmn(WorkflowPolicy policy) {
+        // The versioned runtime currently supports start/end and configured user tasks.
+        List<WorkflowNode> executableNodes = new ArrayList<>();
+        policy.getNodes().stream().filter(node -> node.getType() == NodeType.START)
+                .findFirst().ifPresent(executableNodes::add);
+        policy.getNodes().stream()
+                .filter(node -> node.getType() == NodeType.CLIENT_TASK
+                        || node.getType() == NodeType.MANUAL_FORM
+                        || node.getType() == NodeType.MANUAL_ACTION)
+                .forEach(executableNodes::add);
+        policy.getNodes().stream().filter(node -> node.getType() == NodeType.END)
+                .findFirst().ifPresent(executableNodes::add);
+
+        StringBuilder xml = new StringBuilder()
+                .append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
+                .append("<bpmn:definitions xmlns:bpmn=\"http://www.omg.org/spec/BPMN/20100524/MODEL\" ")
+                .append("targetNamespace=\"http://demo\">")
+                .append("<bpmn:process id=\"DemoProcess_1\" name=\"")
+                .append(escapeXml(policy.getName())).append("\" isExecutable=\"true\">");
+
+        executableNodes.forEach(node -> xml.append((switch (node.getType()) {
+            case START -> "<bpmn:startEvent id=\"%s\" name=\"%s\"/>";
+            case END -> "<bpmn:endEvent id=\"%s\" name=\"%s\"/>";
+            default -> "<bpmn:userTask id=\"%s\" name=\"%s\"/>";
+        }).formatted(escapeXml(node.getNodeId()), escapeXml(node.getLabel()))));
+
+        for (int i = 0; i + 1 < executableNodes.size(); i++) {
+            xml.append("<bpmn:sequenceFlow id=\"DemoFlow_").append(i + 1)
+                    .append("\" sourceRef=\"").append(escapeXml(executableNodes.get(i).getNodeId()))
+                    .append("\" targetRef=\"").append(escapeXml(executableNodes.get(i + 1).getNodeId()))
+                    .append("\"/>");
+        }
+        return xml.append("</bpmn:process></bpmn:definitions>").toString();
+    }
+
+    private String escapeXml(String value) {
+        if (value == null) return "";
+        return value.replace("&", "&amp;").replace("<", "&lt;")
+                .replace(">", "&gt;").replace("\"", "&quot;");
     }
 
     // ── Officers extra (idempotente por email) ────────────────────────────────

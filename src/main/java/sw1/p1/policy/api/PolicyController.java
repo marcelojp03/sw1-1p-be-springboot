@@ -10,6 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import sw1.p1.form.application.CurrentOrganizationResolver;
 import sw1.p1.policy.application.PolicyService;
 import sw1.p1.policy.domain.PolicyVersion;
 import sw1.p1.policy.domain.PolicyVersionRepository;
@@ -30,17 +31,21 @@ public class PolicyController {
     private final PolicyService policyService;
     private final PolicyVersionRepository versionRepository;
     private final WorkflowPolicyRepository policyRepository;
+    private final CurrentOrganizationResolver organizationResolver;
 
     @PostMapping
     public ResponseEntity<PolicyResponse> create(@Valid @RequestBody CreatePolicyRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(policyService.create(request));
+        return ResponseEntity.status(HttpStatus.CREATED).body(policyService.create(
+                organizationResolver.requireOrganizationId(), request));
     }
 
     @GetMapping
     public ResponseEntity<Page<PolicyVersionSummaryResponse>> findByOrganization(
             @RequestParam String organizationId,
             @PageableDefault(size = 20, sort = "updatedAt") Pageable pageable) {
-        Page<WorkflowPolicy> policies = policyRepository.findByOrganizationId(organizationId, pageable);
+        String authenticatedOrganizationId = organizationResolver.requireOrganizationId();
+        Page<WorkflowPolicy> policies = policyRepository.findByOrganizationId(
+                authenticatedOrganizationId, pageable);
         List<PolicyVersionSummaryResponse> summaries = policies.getContent().stream()
                 .map(this::buildSummary)
                 .toList();
@@ -71,19 +76,21 @@ public class PolicyController {
 
     @GetMapping("/{id}")
     public ResponseEntity<PolicyResponse> findById(@PathVariable String id) {
-        return ResponseEntity.ok(policyService.findById(id));
+        return ResponseEntity.ok(policyService.findById(
+                organizationResolver.requireOrganizationId(), id));
     }
 
     @PatchMapping("/{id}")
     public ResponseEntity<PolicyResponse> updateMeta(
             @PathVariable String id,
             @Valid @RequestBody UpdatePolicyMetaRequest request) {
-        return ResponseEntity.ok(policyService.updateMeta(id, request));
+        return ResponseEntity.ok(policyService.updateMeta(
+                organizationResolver.requireOrganizationId(), id, request));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable String id) {
-        policyService.delete(id);
+        policyService.delete(organizationResolver.requireOrganizationId(), id);
         return ResponseEntity.noContent().build();
     }
 
@@ -91,12 +98,14 @@ public class PolicyController {
     public ResponseEntity<PolicyResponse> updateDiagram(
             @PathVariable String id,
             @RequestBody DiagramUpdateRequest request) {
-        return ResponseEntity.ok(policyService.updateDiagram(id, request));
+        return ResponseEntity.ok(policyService.updateDiagram(
+                organizationResolver.requireOrganizationId(), id, request));
     }
 
     @PostMapping("/{id}/publish")
     public ResponseEntity<PolicyResponse> publish(@PathVariable String id) {
-        return ResponseEntity.ok(policyService.publish(id));
+        return ResponseEntity.ok(policyService.publish(
+                organizationResolver.requireOrganizationId(), id));
     }
 
     @PostMapping("/new-version")
@@ -104,12 +113,13 @@ public class PolicyController {
             @RequestParam String organizationId,
             @RequestParam String policyKey) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(policyService.createNewVersion(organizationId, policyKey));
+                .body(policyService.createNewVersion(
+                        organizationResolver.requireOrganizationId(), policyKey));
     }
 
     @PostMapping("/{id}/archive")
     public ResponseEntity<Void> archive(@PathVariable String id) {
-        policyService.archive(id);
+        policyService.archive(organizationResolver.requireOrganizationId(), id);
         return ResponseEntity.noContent().build();
     }
 }

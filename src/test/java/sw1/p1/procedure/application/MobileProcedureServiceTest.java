@@ -15,13 +15,19 @@ import sw1.p1.exception.ConflictException;
 import sw1.p1.exception.NotFoundException;
 import sw1.p1.notification.application.NotificationService;
 import sw1.p1.policy.domain.FormDefinition;
+import sw1.p1.policy.application.PublishedPolicyAvailabilityService;
+import sw1.p1.policy.domain.PolicyVersion;
 import sw1.p1.policy.domain.PolicyVersionRepository;
+import sw1.p1.policy.domain.WorkflowPolicy;
 import sw1.p1.policy.domain.WorkflowPolicyRepository;
 import sw1.p1.procedure.domain.Procedure;
 import sw1.p1.procedure.domain.ProcedureRepository;
 import sw1.p1.procedure.domain.ProcedureHistoryRepository;
+import sw1.p1.procedure.dto.StartProcedureRequest;
 import sw1.p1.shared.TaskAudience;
 import sw1.p1.shared.TaskStatus;
+import sw1.p1.shared.PolicyStatus;
+import sw1.p1.shared.PolicyVersionStatus;
 import sw1.p1.shared.storage.AttachmentRef;
 import sw1.p1.shared.storage.StorageService;
 import sw1.p1.task.domain.Task;
@@ -51,6 +57,9 @@ class MobileProcedureServiceTest {
     private final WorkflowEngineService workflowEngine = mock(WorkflowEngineService.class);
     private final NotificationService notificationService = mock(NotificationService.class);
     private final StorageService storageService = mock(StorageService.class);
+    private final PublishedPolicyAvailabilityService availabilityService =
+            new PublishedPolicyAvailabilityService(policyRepository, versionRepository);
+    private final ProcedureService procedureService = mock(ProcedureService.class);
 
     private final SecurityContext securityContext = mock(SecurityContext.class);
     private final Authentication authentication = mock(Authentication.class);
@@ -66,9 +75,10 @@ class MobileProcedureServiceTest {
         when(securityContext.getAuthentication()).thenReturn(authentication);
 
         service = new MobileProcedureService(
-                procedureRepository, historyRepository, policyRepository, versionRepository,
-                userRepository, clientRepository, taskRepository,
-                workflowEngine, notificationService, storageService);
+                procedureRepository, historyRepository, policyRepository,
+                 userRepository, clientRepository, taskRepository,
+                workflowEngine, notificationService, storageService, availabilityService,
+                procedureService);
     }
 
     @AfterEach
@@ -89,6 +99,78 @@ class MobileProcedureServiceTest {
         var c = mock(Client.class);
         when(c.getId()).thenReturn(id);
         return c;
+    }
+
+    @Test
+    void availablePoliciesUsesExactPublishedPointer() {
+        givenCatalogClient("org-1");
+        WorkflowPolicy policy = catalogPolicy("v2");
+        PolicyVersion version = PolicyVersion.builder()
+                .id("v2").policyId("p1").versionNumber(2)
+                .status(PolicyVersionStatus.PUBLISHED).build();
+        when(policyRepository.findByOrganizationIdAndStatusAndAllowedStartChannelsContaining(
+                "org-1", PolicyStatus.PUBLISHED, "MOBILE")).thenReturn(List.of(policy));
+        when(versionRepository.findById("v2")).thenReturn(Optional.of(version));
+
+        var result = service.availablePolicies();
+
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst().policyVersionId()).isEqualTo("v2");
+        assertThat(result.getFirst().version()).isEqualTo(2);
+        verify(versionRepository, never()).findTopByPolicyIdAndStatusOrderByVersionNumberDesc(any(), any());
+    }
+
+    @Test
+    void availablePoliciesExcludesMissingOrNonPublishedPointerWithoutFallback() {
+        givenCatalogClient("org-1");
+        WorkflowPolicy policy = catalogPolicy("v2");
+        when(policyRepository.findByOrganizationIdAndStatusAndAllowedStartChannelsContaining(
+                "org-1", PolicyStatus.PUBLISHED, "MOBILE")).thenReturn(List.of(policy));
+        when(versionRepository.findById("v2")).thenReturn(Optional.of(
+                PolicyVersion.builder().id("v2").policyId("p1")
+                        .status(PolicyVersionStatus.DRAFT).build()));
+
+        assertThat(service.availablePolicies()).isEmpty();
+        verify(versionRepository, never()).findTopByPolicyIdAndStatusOrderByVersionNumberDesc(any(), any());
+    }
+
+    @Test
+    void newerDraftDoesNotHidePointedPublishedVersion() {
+        givenCatalogClient("org-1");
+        WorkflowPolicy policy = catalogPolicy("v1");
+        when(policyRepository.findByOrganizationIdAndStatusAndAllowedStartChannelsContaining(
+                "org-1", PolicyStatus.PUBLISHED, "MOBILE")).thenReturn(List.of(policy));
+        when(versionRepository.findById("v1")).thenReturn(Optional.of(
+                PolicyVersion.builder().id("v1").policyId("p1").versionNumber(1)
+                        .status(PolicyVersionStatus.PUBLISHED).build()));
+
+        assertThat(service.availablePolicies()).extracting("policyVersionId").containsExactly("v1");
+    }
+
+    private void givenCatalogClient(String organizationId) {
+        when(authentication.getName()).thenReturn("client@test.com");
+        User user = mock(User.class);
+        when(user.getId()).thenReturn("user-1");
+        when(userRepository.findByEmail("client@test.com")).thenReturn(Optional.of(user));
+        Client client = mock(Client.class);
+        when(client.getOrganizationId()).thenReturn(organizationId);
+        when(clientRepository.findByUserId("user-1")).thenReturn(Optional.of(client));
+    }
+
+    private WorkflowPolicy catalogPolicy(String pointer) {
+        return WorkflowPolicy.builder()
+                .id("p1").policyKey("POL").name("Política")
+                .organizationId("org-1").status(PolicyStatus.PUBLISHED)
+                .latestPublishedVersionId(pointer)
+                .allowedStartChannels(List.of("MOBILE"))
+                .build();
+    }
+
+    @Test
+    void legacyMobileStartDelegatesToAuthenticatedLatestVersionFlow() {
+        service.start(new StartProcedureRequest("p1", "client-1", "org-evil"));
+
+        verify(procedureService).startLatestForClient("p1", "client-1", authentication);
     }
 
     private Task task(String id, String procedureId, String policyId, String policyVersionId,

@@ -14,17 +14,22 @@ import org.springframework.test.web.servlet.MockMvc;
 import sw1.p1.exception.BusinessException;
 import sw1.p1.exception.ConflictException;
 import sw1.p1.exception.GlobalExceptionHandler;
+import sw1.p1.exception.NotFoundException;
+import sw1.p1.exception.ValidationException;
 import sw1.p1.form.application.CurrentOrganizationResolver;
 import sw1.p1.form.exception.FormVersionNotFoundException;
 import sw1.p1.policy.application.PolicyVersionService;
 import sw1.p1.policy.dto.NodeConfigurationResponse;
 import sw1.p1.procedure.application.ProcedureService;
 
+import java.util.List;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -159,6 +164,54 @@ class PolicyNodeConfigurationApiTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"taskKind\":\"CLIENT_TASK\",\"slaHours\":0}"))
                 .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
+    @WithMockUser(username = "admin-1", roles = "ADMIN")
+    void invalidPublicationReturns422WithViolations() throws Exception {
+        when(versionService.publish("org-1", "p1", "pv1", "admin-1"))
+                .thenThrow(new ValidationException(List.of(
+                        new sw1.p1.policy.application.BpmnValidationService.Violation(
+                                "INVALID_FORM_VERSION", "userTask1", "FormVersion inválida"))));
+
+        mockMvc.perform(post("/api/policies/p1/versions/pv1/publish").with(csrf()))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.violations[0].code").value("INVALID_FORM_VERSION"))
+                .andExpect(jsonPath("$.violations[0].elementId").value("userTask1"));
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void versionedStartAcceptsClientIdWithoutOrganizationId() throws Exception {
+        mockMvc.perform(post("/api/policies/p1/versions/pv1/procedures")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"clientId\":\"client-1\"}"))
+                .andExpect(status().isCreated());
+
+        verify(procedureService).startFromVersionForInternal("p1", "pv1", "client-1");
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void unavailableVersionedStartReturns404() throws Exception {
+        when(procedureService.startFromVersionForInternal("p1", "missing", null))
+                .thenThrow(new NotFoundException("PolicyVersion no encontrada"));
+
+        mockMvc.perform(post("/api/policies/p1/versions/missing/procedures").with(csrf()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value("PolicyVersion no encontrada"));
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void stalePointerVersionedStartReturns409() throws Exception {
+        when(procedureService.startFromVersionForInternal("p1", "pv1", null))
+                .thenThrow(new ConflictException("La versión no es la publicación vigente"));
+
+        mockMvc.perform(post("/api/policies/p1/versions/pv1/procedures").with(csrf()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("La versión no es la publicación vigente"));
     }
 
     private NodeConfigurationResponse response(String formVersionId) {

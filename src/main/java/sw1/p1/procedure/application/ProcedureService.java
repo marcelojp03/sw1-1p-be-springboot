@@ -10,8 +10,9 @@ import sw1.p1.client.domain.Client;
 import sw1.p1.client.domain.ClientRepository;
 import sw1.p1.exception.BusinessException;
 import sw1.p1.exception.NotFoundException;
+import sw1.p1.form.application.CurrentOrganizationResolver;
+import sw1.p1.policy.application.PublishedPolicyAvailabilityService;
 import sw1.p1.policy.domain.*;
-import sw1.p1.policy.domain.PolicyVersionRepository;
 import sw1.p1.policy.domain.NodeConfigurationRepository;
 import sw1.p1.procedure.domain.*;
 import sw1.p1.procedure.dto.ProcedureResponse;
@@ -32,104 +33,54 @@ public class ProcedureService {
     private final ProcedureRepository procedureRepository;
     private final ProcedureHistoryRepository historyRepository;
     private final WorkflowPolicyRepository policyRepository;
-    private final PolicyVersionRepository versionRepository;
     private final NodeConfigurationRepository nodeConfigRepository;
     private final BpmnExecutionAdapter bpmnAdapter;
     private final UserRepository userRepository;
     private final ClientRepository clientRepository;
     private final WorkflowEngineService workflowEngine;
+    private final CurrentOrganizationResolver organizationResolver;
+    private final PublishedPolicyAvailabilityService availabilityService;
 
     public ProcedureResponse start(StartProcedureRequest request) {
-        WorkflowPolicy policy = policyRepository.findById(request.policyId())
-                .orElseThrow(() -> new NotFoundException("Política no encontrada: " + request.policyId()));
-
-        if (policy.getStatus() != PolicyStatus.PUBLISHED) {
-            throw new BusinessException("Solo se pueden iniciar trámites con políticas PUBLISHED");
-        }
-        if (!policy.getAllowedStartChannels().contains("WEB")) {
-            throw new BusinessException("Esta política no permite iniciar trámites por canal WEB");
-        }
-
-        String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
-        String startedBy = userRepository.findByEmail(currentUsername)
-                .map(u -> u.getId())
-                .orElse(null);
-
-        Client client = clientRepository.findById(request.clientId()).orElse(null);
-        Procedure.RequesterInfo requester = null;
-        if (client != null) {
-            requester = Procedure.RequesterInfo.builder()
-                    .fullName(client.getFullName())
-                    .documentType(client.getDocumentType())
-                    .documentNumber(client.getDocumentNumber())
-                    .phone(client.getPhone())
-                    .email(client.getEmail())
-                    .build();
-        }
-
-        PolicySnapshot snapshot = PolicySnapshot.builder()
-                .policyId(policy.getId())
-                .policyKey(policy.getPolicyKey())
-                .policyName(policy.getName())
-                .version(policy.getVersion())
-                .status(policy.getStatus())
-                .nodes(policy.getNodes())
-                .transitions(policy.getTransitions())
-                .snapshotAt(Instant.now())
-                .build();
-
-        Instant now = Instant.now();
-        long sequential = procedureRepository.count() + 1;
-        int year = ZonedDateTime.now(ZoneOffset.UTC).getYear();
-        String code = String.format("TRM-%d-%04d", year, sequential);
-
-        Procedure procedure = Procedure.builder()
-                .code(code)
-                .organizationId(request.organizationId())
-                .policyId(policy.getId())
-                .policyVersion(policy.getVersion())
-                .clientId(request.clientId())
-                .startedBy(startedBy)
-                .requester(requester)
-                .status(ProcedureStatus.CREATED)
-                .policySnapshot(snapshot)
-                .startChannel("WEB")
-                .startedAt(now)
-                .createdAt(now)
-                .updatedAt(now)
-                .build();
-
-        procedure = procedureRepository.save(procedure);
-        workflowEngine.start(procedure, startedBy);
-
-        // Recargar para reflejar los cambios del motor
-        procedure = getOrThrow(procedure.getId());
-        return toResponse(procedure);
+        return startLatestForInternal(request.policyId(), request.clientId());
     }
 
-    public ProcedureResponse startFromVersion(String policyId, String versionId,
-                                               String clientId, String organizationId) {
-        PolicyVersion version = versionRepository.findById(versionId)
-                .orElseThrow(() -> new NotFoundException("Versión no encontrada: " + versionId));
+    public ProcedureResponse startLatestForInternal(String policyId, String clientId) {
+        String organizationId = organizationResolver.requireOrganizationId();
+        WorkflowPolicy policy = requirePolicyForOrganization(organizationId, policyId);
+        return startFromVersionForInternal(policyId, requirePublishedPointer(policy), clientId);
+    }
 
-        if (!version.getPolicyId().equals(policyId)) {
-            throw new BusinessException("La versión no pertenece a esta política");
-        }
+    public ProcedureResponse startFromVersionForInternal(String policyId, String versionId,
+                                                          String clientId) {
+        String organizationId = organizationResolver.requireOrganizationId();
+        String email = organizationResolver.requireEmail();
+        String startedBy = userRepository.findByEmail(email)
+                .map(user -> user.getId())
+                .orElseThrow(() -> new NotFoundException("Usuario autenticado no encontrado"));
+        Client client = resolveClient(clientId, organizationId);
+        return startAvailableVersion(policyId, versionId, organizationId, client, startedBy, "WEB");
+    }
 
+    private ProcedureResponse startAvailableVersion(String policyId, String versionId,
+                                                     String organizationId, Client client,
+                                                     String startedBy, String channel) {
+        var available = availabilityService.requireAvailable(
+                organizationId, policyId, versionId, channel);
+        WorkflowPolicy policy = available.policy();
+        PolicyVersion version = available.version();
         List<NodeConfiguration> configs = nodeConfigRepository.findByPolicyVersionId(versionId);
         BpmnExecutionAdapter.BpmnProcessDefinition def = bpmnAdapter.parse(version, configs);
-
-        String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
-        String startedBy = userRepository.findByEmail(currentUsername)
-                .map(u -> u.getId()).orElse(null);
-
+        if (client == null && def.nodes().stream()
+                .anyMatch(node -> node.getType() == sw1.p1.shared.NodeType.CLIENT_TASK)) {
+            throw new BusinessException("El trámite requiere un clientId para sus CLIENT_TASK");
+        }
         PolicySnapshot snapshot = PolicySnapshot.builder()
                 .policyId(policyId)
-                .policyKey(version.getPolicyId() + "-v" + version.getVersionNumber())
-                .policyName(policyRepository.findById(policyId)
-                        .map(WorkflowPolicy::getName)
-                        .orElse("Política " + policyId))
+                .policyKey(policy.getPolicyKey())
+                .policyName(policy.getName())
                 .version(version.getVersionNumber())
+                .status(policy.getStatus())
                 .nodes(def.nodes())
                 .transitions(def.transitions())
                 .snapshotAt(Instant.now())
@@ -146,11 +97,12 @@ public class ProcedureService {
                 .policyId(policyId)
                 .policyVersionId(versionId)
                 .policyVersion(version.getVersionNumber())
-                .clientId(clientId)
+                .clientId(client != null ? client.getId() : null)
                 .startedBy(startedBy)
+                .requester(toRequester(client))
                 .status(ProcedureStatus.CREATED)
                 .policySnapshot(snapshot)
-                .startChannel("WEB")
+                .startChannel(channel)
                 .startedAt(now)
                 .createdAt(now)
                 .updatedAt(now)
@@ -163,13 +115,70 @@ public class ProcedureService {
     }
 
     public ProcedureResponse startFromVersionForClient(String policyId, String versionId,
-                                                        org.springframework.security.core.Authentication auth) {
+                                                         org.springframework.security.core.Authentication auth) {
         String email = auth.getName();
         var user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new NotFoundException("Usuario no encontrado: " + email));
         Client client = clientRepository.findByUserId(user.getId())
                 .orElseThrow(() -> new NotFoundException("Cliente no encontrado para el usuario: " + email));
-        return startFromVersion(policyId, versionId, client.getId(), client.getOrganizationId());
+        if (user.getOrganizationId() == null
+                || !user.getOrganizationId().equals(client.getOrganizationId())) {
+            throw new NotFoundException("Cliente no encontrado para el usuario: " + email);
+        }
+        return startAvailableVersion(
+                policyId, versionId, user.getOrganizationId(), client, user.getId(), "MOBILE");
+    }
+
+    public ProcedureResponse startLatestForClient(String policyId, String requestedClientId,
+                                                    org.springframework.security.core.Authentication auth) {
+        String email = auth.getName();
+        var user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new NotFoundException("Usuario no encontrado: " + email));
+        Client client = clientRepository.findByUserId(user.getId())
+                .orElseThrow(() -> new NotFoundException("Cliente no encontrado para el usuario: " + email));
+        if (requestedClientId != null && !requestedClientId.equals(client.getId())) {
+            throw new BusinessException("No puede iniciar trámites en nombre de otro cliente");
+        }
+        if (user.getOrganizationId() == null
+                || !user.getOrganizationId().equals(client.getOrganizationId())) {
+            throw new NotFoundException("Cliente no encontrado para el usuario: " + email);
+        }
+        WorkflowPolicy policy = requirePolicyForOrganization(user.getOrganizationId(), policyId);
+        return startAvailableVersion(policyId, requirePublishedPointer(policy),
+                user.getOrganizationId(), client, user.getId(), "MOBILE");
+    }
+
+    private WorkflowPolicy requirePolicyForOrganization(String organizationId, String policyId) {
+        return policyRepository.findById(policyId)
+                .filter(policy -> organizationId.equals(policy.getOrganizationId()))
+                .orElseThrow(() -> new NotFoundException("Política no encontrada: " + policyId));
+    }
+
+    private String requirePublishedPointer(WorkflowPolicy policy) {
+        if (policy.getLatestPublishedVersionId() == null
+                || policy.getLatestPublishedVersionId().isBlank()) {
+            throw new sw1.p1.exception.ConflictException(
+                    "La política publicada no tiene latestPublishedVersionId");
+        }
+        return policy.getLatestPublishedVersionId();
+    }
+
+    private Client resolveClient(String clientId, String organizationId) {
+        if (clientId == null || clientId.isBlank()) return null;
+        return clientRepository.findById(clientId)
+                .filter(client -> organizationId.equals(client.getOrganizationId()))
+                .orElseThrow(() -> new NotFoundException("Cliente no encontrado: " + clientId));
+    }
+
+    private Procedure.RequesterInfo toRequester(Client client) {
+        if (client == null) return null;
+        return Procedure.RequesterInfo.builder()
+                .fullName(client.getFullName())
+                .documentType(client.getDocumentType())
+                .documentNumber(client.getDocumentNumber())
+                .phone(client.getPhone())
+                .email(client.getEmail())
+                .build();
     }
 
     public Page<ProcedureSummaryResponse> findByOrganization(String organizationId, Pageable pageable) {

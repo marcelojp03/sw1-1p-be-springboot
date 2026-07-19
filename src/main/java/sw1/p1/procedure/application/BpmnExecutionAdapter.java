@@ -34,7 +34,18 @@ public class BpmnExecutionAdapter {
     ) {}
 
     public BpmnProcessDefinition parse(PolicyVersion version, List<NodeConfiguration> configs) {
-        if (version.getStatus() != PolicyVersionStatus.PUBLISHED) {
+        return parseDefinition(version, configs, true);
+    }
+
+    public BpmnProcessDefinition validateForPublication(PolicyVersion version,
+                                                         List<NodeConfiguration> configs) {
+        return parseDefinition(version, configs, false);
+    }
+
+    private BpmnProcessDefinition parseDefinition(PolicyVersion version,
+                                                   List<NodeConfiguration> configs,
+                                                   boolean requirePublished) {
+        if (requirePublished && version.getStatus() != PolicyVersionStatus.PUBLISHED) {
             throw new BusinessException("Solo se pueden ejecutar versiones PUBLICADAS");
         }
 

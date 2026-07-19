@@ -27,10 +27,10 @@ public class PolicyService {
 
     // ── CRUD básico ──────────────────────────────────────────────────────────
 
-    public PolicyResponse create(CreatePolicyRequest request) {
+    public PolicyResponse create(String organizationId, CreatePolicyRequest request) {
         // No puede haber otra política DRAFT con la misma clave en la misma org
         if (policyRepository.existsByOrganizationIdAndPolicyKeyAndStatus(
-                request.organizationId(), request.policyKey(), PolicyStatus.DRAFT)) {
+                organizationId, request.policyKey(), PolicyStatus.DRAFT)) {
             throw new ConflictException(
                     "Ya existe un borrador para la clave '" + request.policyKey() + "'");
         }
@@ -38,11 +38,11 @@ public class PolicyService {
         String createdBy = currentUserId();
 
         WorkflowPolicy policy = WorkflowPolicy.builder()
-                .organizationId(request.organizationId())
+                .organizationId(organizationId)
                 .policyKey(request.policyKey())
                 .name(request.name())
                 .description(request.description())
-                .version(nextVersion(request.organizationId(), request.policyKey()))
+                .version(nextVersion(organizationId, request.policyKey()))
                 .status(PolicyStatus.DRAFT)
                 .allowedStartChannels(request.allowedStartChannels())
                 .createdBy(createdBy)
@@ -62,14 +62,14 @@ public class PolicyService {
                 .map(this::toSummary);
     }
 
-    public PolicyResponse findById(String id) {
-        return toResponse(getOrThrow(id));
+    public PolicyResponse findById(String organizationId, String id) {
+        return toResponse(getOrThrow(organizationId, id));
     }
 
     // ── Diagrama ─────────────────────────────────────────────────────────────
 
-    public PolicyResponse updateDiagram(String id, DiagramUpdateRequest request) {
-        WorkflowPolicy policy = getOrThrow(id);
+    public PolicyResponse updateDiagram(String organizationId, String id, DiagramUpdateRequest request) {
+        WorkflowPolicy policy = getOrThrow(organizationId, id);
         requireDraft(policy);
 
         policy.setDiagram(request.diagram());
@@ -83,63 +83,20 @@ public class PolicyService {
 
     // ── Publicar ─────────────────────────────────────────────────────────────
 
-    public PolicyResponse publish(String id) {
-        WorkflowPolicy policy = getOrThrow(id);
-        requireDraft(policy);
-        validateStructure(policy);
-
-        // Archivar la versión PUBLISHED anterior si existe
-        policyRepository.findByOrganizationIdAndPolicyKeyAndStatus(
-                        policy.getOrganizationId(), policy.getPolicyKey(), PolicyStatus.PUBLISHED)
-                .ifPresent(prev -> {
-                    prev.setStatus(PolicyStatus.ARCHIVED);
-                    prev.setUpdatedAt(Instant.now());
-                    policyRepository.save(prev);
-                });
-
-        String publishedBy = currentUserId();
-        policy.setStatus(PolicyStatus.PUBLISHED);
-        policy.setPublishedBy(publishedBy);
-        policy.setPublishedAt(Instant.now());
-        policy.setUpdatedAt(Instant.now());
-
-        return toResponse(policyRepository.save(policy));
+    public PolicyResponse publish(String organizationId, String id) {
+        getOrThrow(organizationId, id);
+        throw new ConflictException(
+                "La publicación requiere una PolicyVersion; use /api/policies/{policyId}/versions/{versionId}/publish");
     }
 
     /** Crear nueva versión DRAFT a partir de la versión más reciente de una policyKey */
     public PolicyResponse createNewVersion(String organizationId, String policyKey) {
-        WorkflowPolicy latest = policyRepository
-                .findTopByOrganizationIdAndPolicyKeyOrderByVersionDesc(organizationId, policyKey)
-                .orElseThrow(() -> new NotFoundException(
-                        "No existe ninguna política con clave: " + policyKey));
-
-        if (policyRepository.existsByOrganizationIdAndPolicyKeyAndStatus(
-                organizationId, policyKey, PolicyStatus.DRAFT)) {
-            throw new ConflictException("Ya existe un borrador para esta política");
-        }
-
-        WorkflowPolicy newVersion = WorkflowPolicy.builder()
-                .organizationId(latest.getOrganizationId())
-                .policyKey(latest.getPolicyKey())
-                .name(latest.getName())
-                .description(latest.getDescription())
-                .version(latest.getVersion() + 1)
-                .status(PolicyStatus.DRAFT)
-                .allowedStartChannels(latest.getAllowedStartChannels())
-                .diagram(latest.getDiagram())
-                .nodes(latest.getNodes())
-                .transitions(latest.getTransitions())
-                .swimlanes(latest.getSwimlanes())
-                .createdBy(currentUserId())
-                .createdAt(Instant.now())
-                .updatedAt(Instant.now())
-                .build();
-
-        return toResponse(policyRepository.save(newVersion));
+        throw new ConflictException(
+                "Las nuevas versiones deben crearse en /api/policies/{policyId}/versions");
     }
 
-    public PolicyResponse updateMeta(String id, UpdatePolicyMetaRequest request) {
-        WorkflowPolicy policy = getOrThrow(id);
+    public PolicyResponse updateMeta(String organizationId, String id, UpdatePolicyMetaRequest request) {
+        WorkflowPolicy policy = getOrThrow(organizationId, id);
         requireDraft(policy);
         policy.setName(request.name());
         policy.setDescription(request.description());
@@ -147,16 +104,16 @@ public class PolicyService {
         return toResponse(policyRepository.save(policy));
     }
 
-    public void delete(String id) {
-        WorkflowPolicy policy = getOrThrow(id);
+    public void delete(String organizationId, String id) {
+        WorkflowPolicy policy = getOrThrow(organizationId, id);
         if (policy.getStatus() != PolicyStatus.DRAFT) {
             throw new BusinessException("Solo se pueden eliminar políticas en estado DRAFT");
         }
         policyRepository.deleteById(id);
     }
 
-    public void archive(String id) {
-        WorkflowPolicy policy = getOrThrow(id);
+    public void archive(String organizationId, String id) {
+        WorkflowPolicy policy = getOrThrow(organizationId, id);
         if (policy.getStatus() == PolicyStatus.ARCHIVED) {
             throw new BusinessException("La política ya está archivada");
         }
@@ -231,8 +188,9 @@ public class PolicyService {
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private WorkflowPolicy getOrThrow(String id) {
+    private WorkflowPolicy getOrThrow(String organizationId, String id) {
         return policyRepository.findById(id)
+                .filter(policy -> organizationId.equals(policy.getOrganizationId()))
                 .orElseThrow(() -> new NotFoundException("Política no encontrada: " + id));
     }
 

@@ -19,6 +19,8 @@ import sw1.p1.form.exception.FormVersionNotFoundException;
 import sw1.p1.policy.domain.*;
 import sw1.p1.policy.dto.NodeConfigurationRequest;
 import sw1.p1.policy.dto.NodeConfigurationResponse;
+import sw1.p1.procedure.application.BpmnExecutionAdapter;
+import sw1.p1.shared.PolicyStatus;
 import sw1.p1.shared.PolicyVersionStatus;
 
 import java.util.Collections;
@@ -38,6 +40,7 @@ class PolicyVersionServiceTest {
     @Mock private BpmnValidationService validationService;
     @Mock private FormVersionRepository formVersionRepository;
     @Mock private FormTemplateRepository formTemplateRepository;
+    @Mock private BpmnExecutionAdapter bpmnExecutionAdapter;
 
     @InjectMocks
     private PolicyVersionService service;
@@ -52,6 +55,7 @@ class PolicyVersionServiceTest {
                 .organizationId("ORG-001")
                 .policyKey("test")
                 .version(1)
+                .status(PolicyStatus.DRAFT)
                 .build();
     }
 
@@ -64,7 +68,7 @@ class PolicyVersionServiceTest {
                 .thenReturn(List.of());
         when(versionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        PolicyVersion result = service.createDraft("POL-001", "user-1");
+        PolicyVersion result = service.createDraft("ORG-001", "POL-001", "user-1");
 
         assertNotNull(result);
         assertEquals("POL-001-V1", result.getId());
@@ -80,7 +84,7 @@ class PolicyVersionServiceTest {
                 .thenReturn(true);
 
         assertThrows(BusinessException.class,
-                () -> service.createDraft("POL-001", "user-1"));
+                () -> service.createDraft("ORG-001", "POL-001", "user-1"));
     }
 
     @Test
@@ -91,9 +95,10 @@ class PolicyVersionServiceTest {
                 .bpmnXml("<xml/>").build();
 
         when(versionRepository.findById("POL-001-V1")).thenReturn(Optional.of(published));
+        when(policyRepository.findById("POL-001")).thenReturn(Optional.of(policy));
 
         assertThrows(BusinessException.class,
-                () -> service.updateDiagram("POL-001", "POL-001-V1", "<new/>"));
+                () -> service.updateDiagram("ORG-001", "POL-001", "POL-001-V1", "<new/>"));
     }
 
     @Test
@@ -105,8 +110,9 @@ class PolicyVersionServiceTest {
 
         when(versionRepository.findById("POL-001-V1")).thenReturn(Optional.of(draft));
         when(versionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(policyRepository.findById("POL-001")).thenReturn(Optional.of(policy));
 
-        PolicyVersion result = service.updateDiagram("POL-001", "POL-001-V1", "<new/>");
+        PolicyVersion result = service.updateDiagram("ORG-001", "POL-001", "POL-001-V1", "<new/>");
 
         assertEquals("<new/>", result.getBpmnXml());
     }
@@ -122,16 +128,19 @@ class PolicyVersionServiceTest {
         when(versionRepository.findById("POL-001-V1")).thenReturn(Optional.of(draft));
         when(validationService.validate("POL-001", "POL-001-V1", "<xml/>"))
                 .thenReturn(new BpmnValidationService.ValidationResult(true, Collections.emptyList()));
-        when(versionRepository.findTopByPolicyIdAndStatusOrderByVersionNumberDesc(
-                "POL-001", PolicyVersionStatus.PUBLISHED)).thenReturn(Optional.empty());
         when(versionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(policyRepository.findById("POL-001")).thenReturn(Optional.of(policy));
         when(policyRepository.save(any())).thenReturn(policy);
+        policy.setCurrentDraftVersionId("POL-001-V1");
 
-        PolicyVersion result = service.publish("POL-001", "POL-001-V1", "user-1");
+        PolicyVersion result = service.publish("ORG-001", "POL-001", "POL-001-V1", "user-1");
 
         assertEquals(PolicyVersionStatus.PUBLISHED, result.getStatus());
         assertNotNull(result.getPublishedAt());
+        assertEquals(PolicyStatus.PUBLISHED, policy.getStatus());
+        assertEquals("POL-001-V1", policy.getLatestPublishedVersionId());
+        assertNull(policy.getCurrentDraftVersionId());
+        assertEquals("user-1", policy.getPublishedBy());
     }
 
     @Test
@@ -143,13 +152,131 @@ class PolicyVersionServiceTest {
                 .build();
 
         when(versionRepository.findById("POL-001-V1")).thenReturn(Optional.of(draft));
+        when(policyRepository.findById("POL-001")).thenReturn(Optional.of(policy));
         when(validationService.validate(any(), any(), any()))
                 .thenReturn(new BpmnValidationService.ValidationResult(false, List.of(
                         new BpmnValidationService.Violation("BPMN_START_EVENT_COUNT", null, "falta StartEvent")
                 )));
 
         assertThrows(ValidationException.class,
-                () -> service.publish("POL-001", "POL-001-V1", "user-1"));
+                () -> service.publish("ORG-001", "POL-001", "POL-001-V1", "user-1"));
+        verify(versionRepository, never()).save(any());
+        verify(policyRepository, never()).save(any());
+    }
+
+    @Test
+    void createSecondDraftKeepsPublishedPointerAndPolicyStatus() {
+        policy.setStatus(PolicyStatus.PUBLISHED);
+        policy.setLatestPublishedVersionId("POL-001-V1");
+        PolicyVersion published = PolicyVersion.builder()
+                .id("POL-001-V1").policyId("POL-001").versionNumber(1)
+                .status(PolicyVersionStatus.PUBLISHED).build();
+        when(policyRepository.findById("POL-001")).thenReturn(Optional.of(policy));
+        when(versionRepository.existsByPolicyIdAndStatus("POL-001", PolicyVersionStatus.DRAFT))
+                .thenReturn(false);
+        when(versionRepository.findByPolicyIdOrderByVersionNumberDesc("POL-001"))
+                .thenReturn(List.of(published));
+        when(versionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        PolicyVersion draft = service.createDraft("ORG-001", "POL-001", "user-1");
+
+        assertEquals("POL-001-V2", draft.getId());
+        assertEquals("POL-001-V1", policy.getLatestPublishedVersionId());
+        assertEquals(PolicyStatus.PUBLISHED, policy.getStatus());
+    }
+
+    @Test
+    void publishSecondVersionMovesPointerAndArchivesPrevious() {
+        policy.setStatus(PolicyStatus.PUBLISHED);
+        policy.setLatestPublishedVersionId("POL-001-V1");
+        policy.setCurrentDraftVersionId("POL-001-V2");
+        PolicyVersion previous = PolicyVersion.builder()
+                .id("POL-001-V1").policyId("POL-001").versionNumber(1)
+                .status(PolicyVersionStatus.PUBLISHED).build();
+        PolicyVersion draft = PolicyVersion.builder()
+                .id("POL-001-V2").policyId("POL-001").versionNumber(2)
+                .status(PolicyVersionStatus.DRAFT).bpmnXml("<xml/>").build();
+        when(policyRepository.findById("POL-001")).thenReturn(Optional.of(policy));
+        when(versionRepository.findById("POL-001-V2")).thenReturn(Optional.of(draft));
+        when(versionRepository.findById("POL-001-V1")).thenReturn(Optional.of(previous));
+        when(versionRepository.findByPolicyIdOrderByVersionNumberDesc("POL-001"))
+                .thenReturn(List.of(draft, previous));
+        when(validationService.validate(any(), any(), any()))
+                .thenReturn(new BpmnValidationService.ValidationResult(true, List.of()));
+        when(versionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(policyRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.publish("ORG-001", "POL-001", "POL-001-V2", "user-2");
+
+        assertEquals(PolicyVersionStatus.ARCHIVED, previous.getStatus());
+        assertEquals(PolicyVersionStatus.PUBLISHED, draft.getStatus());
+        assertEquals("POL-001-V2", policy.getLatestPublishedVersionId());
+        assertEquals(2, policy.getVersion());
+    }
+
+    @Test
+    void publicationRevalidatesFormReferencesBeforeWriting() {
+        PolicyVersion draft = draftVersion();
+        NodeConfiguration config = NodeConfiguration.builder()
+                .bpmnElementId("u1").taskKind("CLIENT_TASK").formVersionId("missing").build();
+        policy.setCurrentDraftVersionId(draft.getId());
+        when(policyRepository.findById("POL-001")).thenReturn(Optional.of(policy));
+        when(versionRepository.findById(draft.getId())).thenReturn(Optional.of(draft));
+        when(nodeConfigRepository.findByPolicyVersionId(draft.getId())).thenReturn(List.of(config));
+        when(validationService.validate(any(), any(), any()))
+                .thenReturn(new BpmnValidationService.ValidationResult(true, List.of()));
+        when(validationService.isUserTask(any(), eq("u1"))).thenReturn(true);
+        when(formVersionRepository.findById("missing")).thenReturn(Optional.empty());
+
+        assertThrows(ValidationException.class, () ->
+                service.publish("ORG-001", "POL-001", draft.getId(), "user-1"));
+
+        verify(versionRepository, never()).save(any());
+        verify(policyRepository, never()).save(any());
+    }
+
+    @Test
+    void materializationFailureDoesNotChangePublicationState() {
+        PolicyVersion draft = draftVersion();
+        policy.setCurrentDraftVersionId(draft.getId());
+        when(policyRepository.findById("POL-001")).thenReturn(Optional.of(policy));
+        when(versionRepository.findById(draft.getId())).thenReturn(Optional.of(draft));
+        when(validationService.validate(any(), any(), any()))
+                .thenReturn(new BpmnValidationService.ValidationResult(true, List.of()));
+        when(bpmnExecutionAdapter.validateForPublication(eq(draft), anyList()))
+                .thenThrow(new BusinessException("No ejecutable"));
+
+        assertThrows(ValidationException.class, () ->
+                service.publish("ORG-001", "POL-001", draft.getId(), "user-1"));
+
+        assertEquals(PolicyVersionStatus.DRAFT, draft.getStatus());
+        verify(versionRepository, never()).save(any());
+        verify(policyRepository, never()).save(any());
+    }
+
+    @Test
+    void policySaveFailureLeavesRecoverablePublishedVersionAndDoesNotArchivePrevious() {
+        PolicyVersion previous = PolicyVersion.builder()
+                .id("POL-001-V0").policyId("POL-001").status(PolicyVersionStatus.PUBLISHED).build();
+        PolicyVersion draft = draftVersion();
+        policy.setStatus(PolicyStatus.PUBLISHED);
+        policy.setLatestPublishedVersionId(previous.getId());
+        policy.setCurrentDraftVersionId(draft.getId());
+        when(policyRepository.findById("POL-001")).thenReturn(Optional.of(policy));
+        when(versionRepository.findById(draft.getId())).thenReturn(Optional.of(draft));
+        when(versionRepository.findById(previous.getId())).thenReturn(Optional.of(previous));
+        when(validationService.validate(any(), any(), any()))
+                .thenReturn(new BpmnValidationService.ValidationResult(true, List.of()));
+        when(versionRepository.save(draft)).thenReturn(draft);
+        when(policyRepository.save(policy)).thenThrow(new RuntimeException("write failed"));
+
+        assertThrows(RuntimeException.class, () ->
+                service.publish("ORG-001", "POL-001", draft.getId(), "user-1"));
+
+        assertEquals(PolicyVersionStatus.PUBLISHED, draft.getStatus());
+        assertEquals(PolicyVersionStatus.PUBLISHED, previous.getStatus());
+        verify(versionRepository).save(draft);
+        verify(versionRepository, never()).save(previous);
     }
 
     @Test
@@ -173,9 +300,20 @@ class PolicyVersionServiceTest {
                 .id("POL-001-V1").policyId("POL-002").build();
 
         when(versionRepository.findById("POL-001-V1")).thenReturn(Optional.of(version));
+        when(policyRepository.findById("POL-001")).thenReturn(Optional.of(policy));
 
         assertThrows(NotFoundException.class,
-                () -> service.getVersion("POL-001", "POL-001-V1"));
+                () -> service.getVersion("ORG-001", "POL-001", "POL-001-V1"));
+    }
+
+    @Test
+    void getVersion_HidesPolicyFromAnotherOrganization() {
+        policy.setOrganizationId("ORG-OTHER");
+        when(policyRepository.findById("POL-001")).thenReturn(Optional.of(policy));
+
+        assertThrows(NotFoundException.class,
+                () -> service.getVersion("ORG-001", "POL-001", "POL-001-V1"));
+        verifyNoInteractions(versionRepository);
     }
 
     @Test
